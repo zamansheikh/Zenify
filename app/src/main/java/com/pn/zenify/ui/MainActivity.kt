@@ -3,12 +3,12 @@ package com.pn.zenify.ui
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pn.zenify.ui.screens.EngineSetupScreen
 import com.pn.zenify.ui.screens.HomeScreen
@@ -27,9 +27,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             ZenifyTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
-                var screen by remember { mutableStateOf(Screen.HOME) }
 
-                when (screen) {
+                // Simple in-app back stack so the system Back button / gesture
+                // navigates between screens and only exits the app from Home.
+                val backStack = remember { mutableStateListOf(Screen.HOME) }
+                val current = backStack.last()
+                fun navigate(screen: Screen) {
+                    if (backStack.last() != screen) backStack.add(screen)
+                }
+                fun pop() {
+                    if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+                }
+
+                // Handle system Back for any non-Home screen.
+                BackHandler(enabled = backStack.size > 1) { pop() }
+
+                when (current) {
                     Screen.HOME -> HomeScreen(
                         state = state,
                         events = viewModel.events,
@@ -42,23 +55,23 @@ class MainActivity : ComponentActivity() {
                         onToggleManaged = viewModel::toggleManaged,
                         onToggleWhitelist = viewModel::toggleWhitelist,
                         onHibernate = viewModel::hibernateSelectedOrAll,
-                        onOpenSettings = { screen = Screen.SETTINGS },
-                        onOpenEngineSetup = { screen = Screen.ENGINE },
+                        onOpenSettings = { navigate(Screen.SETTINGS) },
+                        onOpenEngineSetup = { navigate(Screen.ENGINE) },
                     )
 
                     Screen.SETTINGS -> SettingsScreen(
                         state = state,
-                        onBack = { screen = Screen.HOME },
+                        onBack = { pop() },
                         onToggleAuto = viewModel::setAutoHibernate,
                         onDelayChange = viewModel::setDelayMinutes,
                         onToggleShowSystem = viewModel::setShowSystem,
                         onToggleScreenOff = viewModel::setHibernateOnScreenOff,
-                        onOpenEngineSetup = { screen = Screen.ENGINE },
+                        onOpenEngineSetup = { navigate(Screen.ENGINE) },
                     )
 
                     Screen.ENGINE -> EngineSetupScreen(
                         state = state,
-                        onBack = { screen = Screen.SETTINGS },
+                        onBack = { pop() },
                         onRequestShizuku = viewModel::requestShizuku,
                     )
                 }
