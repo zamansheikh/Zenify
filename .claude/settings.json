@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/zaman/AppData/Local/Android/Sdk/platforms/**)",
+      "Read(//c/Users/zaman/AppData/Local/Android/Sdk/build-tools/**)",
+      "Bash(adb devices *)",
+      "Bash(echo \"--- gradle caches wrapper dists ---\"; ls \"$HOME/.gradle/wrapper/dists\" 2>&1 | head; echo \"--- find gradle-wrapper.jar ---\"; find \"$HOME/.gradle\" -name \"gradle-wrapper.jar\" 2>/dev/null | head -3; find \"/c/Program Files\" -iname \"gradle*\" -maxdepth 4 2>/dev/null | head; echo \"--- studio installs ---\"; ls \"/c/Program Files/Android/Android Studio/plugins/gradle\" 2>&1 | head)",
+      "Read(//c/Users/zaman/.gradle/wrapper/dists/**)",
+      "Read(//c/Users/zaman/.gradle/**)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files/Android/Android Studio/plugins/gradle/**)",
+      "Bash(./gradlew :app:assembleDebug --no-daemon)",
+      "Bash(adb install *)",
+      "Bash(adb shell *)",
+      "Bash(adb exec-out *)",
+      "Bash(./gradlew :app:assembleDebug --no-daemon -q)"
+    ]
+  }
+}

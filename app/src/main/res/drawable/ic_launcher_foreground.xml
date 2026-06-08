@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Leaf body -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,32 C46,33 35,52 35,76 C35,76 39,72 47,69 C45,60 49,49 60,44 C53,52 52,60 53,66 C66,62 72,49 70,32 Z" />
+    <!-- Leaf vein / stem -->
+    <path
+        android:fillColor="#A5D6B7"
+        android:pathData="M64,40 C50,52 44,64 41,75 L44,76 C47,65 53,54 65,42 Z" />
+</vector>

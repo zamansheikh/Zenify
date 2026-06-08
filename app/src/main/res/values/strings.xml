@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Zenify</string>
+    <string name="tagline">Calm your apps. Save your battery.</string>
+
+    <!-- Sections -->
+    <string name="section_not_hibernating">Not hibernating automatically</string>
+    <string name="section_hibernated">Hibernated</string>
+    <string name="section_active">Active &amp; awake</string>
+
+    <!-- Notifications -->
+    <string name="notif_channel_watcher">Auto-hibernation watcher</string>
+    <string name="notif_channel_watcher_desc">Persistent notification while Zenify watches for apps to hibernate.</string>
+    <string name="notif_watching_title">Zenify is keeping things calm</string>
+    <string name="notif_watching_text">Watching %1$d apps · last pass hibernated %2$d</string>
+
+    <!-- Shizuku states -->
+    <string name="shizuku_not_running">Shizuku isn\'t running. Start Shizuku, then grant access.</string>
+    <string name="shizuku_not_granted">Tap to grant Zenify access to Shizuku.</string>
+    <string name="shizuku_ready">Shizuku connected — hibernation is ready.</string>
+</resources>
