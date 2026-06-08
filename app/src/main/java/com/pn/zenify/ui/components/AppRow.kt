@@ -1,7 +1,8 @@
 package com.pn.zenify.ui.components
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
@@ -29,28 +31,27 @@ import coil.compose.AsyncImage
 import com.pn.zenify.data.AppInfo
 import com.pn.zenify.data.RunState
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppRow(
     app: AppInfo,
     onClick: () -> Unit,
     onToggleWhitelist: () -> Unit,
     modifier: Modifier = Modifier,
-    selectable: Boolean = false,
+    selectionMode: Boolean = false,
     selected: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
 ) {
     val container = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ListItem(
         modifier = modifier
             .background(container)
-            .clickable(onClick = onClick),
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selectable) {
-                    Checkbox(
-                        checked = selected,
-                        onCheckedChange = { onClick() },
-                    )
+                if (selectionMode) {
+                    Checkbox(checked = selected, onCheckedChange = { onClick() })
                 }
                 AsyncImage(
                     model = app.icon,
@@ -62,9 +63,17 @@ fun AppRow(
             }
         },
         headlineContent = { Text(app.label) },
-        supportingContent = { Text(stateLabel(app), style = MaterialTheme.typography.bodySmall) },
+        supportingContent = { Text(supportingText(app), style = MaterialTheme.typography.bodySmall) },
         trailingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (app.risky) {
+                    Icon(
+                        imageVector = Icons.Filled.WarningAmber,
+                        contentDescription = "Risky to force-stop",
+                        tint = MaterialTheme.colorScheme.tertiary,
+                        modifier = Modifier.padding(end = 6.dp).size(18.dp),
+                    )
+                }
                 if (app.managed) {
                     IconButton(onClick = onToggleWhitelist) {
                         Icon(
@@ -99,7 +108,8 @@ private fun StateDot(state: RunState) {
     )
 }
 
-private fun stateLabel(app: AppInfo): String = when {
+private fun supportingText(app: AppInfo): String = when {
+    app.risky && app.riskReason != null -> "${app.riskReason} · skipped by default"
     app.whitelisted -> "Won't hibernate"
     app.runState == RunState.FOREGROUND -> "In use right now"
     app.runState == RunState.RUNNING -> "Running in background"

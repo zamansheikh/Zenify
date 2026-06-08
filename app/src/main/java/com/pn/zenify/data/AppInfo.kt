@@ -24,6 +24,10 @@ data class AppInfo(
     val managed: Boolean,
     /** User chose to never hibernate this app. */
     val whitelisted: Boolean,
+    /** Risky to force-stop (keyboard, launcher, accessibility, device admin). */
+    val risky: Boolean = false,
+    /** Short reason shown to the user when [risky]. */
+    val riskReason: String? = null,
 ) {
     val isActive: Boolean get() = runState != RunState.STOPPED
 }

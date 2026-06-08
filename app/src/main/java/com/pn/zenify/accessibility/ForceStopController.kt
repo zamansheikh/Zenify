@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import com.pn.zenify.core.HibernationTracker
 import com.pn.zenify.ui.MainActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -51,10 +52,18 @@ object ForceStopController {
         if (currentPackage == null) advance()
     }
 
-    /** Called by the service once a package's force-stop flow has finished. */
+    /**
+     * Called by the service once a package's force-stop flow has finished.
+     * [success] is false when we gave up (button never appeared) so we don't
+     * falsely mark it hibernated.
+     */
     @Synchronized
-    fun onPackageHandled() {
-        if (currentPackage != null) done++
+    fun onPackageHandled(success: Boolean) {
+        val pkg = currentPackage
+        if (pkg != null) {
+            done++
+            if (success) HibernationTracker.mark(pkg)
+        }
         currentPackage = null
         advance()
     }

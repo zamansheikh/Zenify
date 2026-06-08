@@ -38,7 +38,12 @@ object Hibernator {
         val succeeded = mutableListOf<String>()
         for (pkg in packages) {
             val ok = ShizukuManager.hibernate(pkg)
-            if (ok) succeeded.add(pkg) else Log.w(TAG, "Could not hibernate $pkg")
+            if (ok) {
+                succeeded.add(pkg)
+                HibernationTracker.mark(pkg)
+            } else {
+                Log.w(TAG, "Could not hibernate $pkg")
+            }
         }
         return HibernateResult(packages, succeeded)
     }

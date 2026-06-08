@@ -2,9 +2,9 @@ package com.pn.zenify.ui.screens
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -27,7 +29,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -56,9 +57,10 @@ fun HomeScreen(
     state: UiState,
     events: SharedFlow<UiEvent>,
     onQueryChange: (String) -> Unit,
+    onEnterSelection: (AppInfo) -> Unit,
     onToggleSelect: (AppInfo) -> Unit,
     onSelectAll: () -> Unit,
-    onClearSelection: () -> Unit,
+    onExitSelection: () -> Unit,
     onToggleManaged: (AppInfo) -> Unit,
     onToggleWhitelist: (AppInfo) -> Unit,
     onHibernate: () -> Unit,
@@ -79,7 +81,20 @@ fun HomeScreen(
         }
     }
 
-    val selecting = state.selection.isNotEmpty()
+    val selecting = state.selectionMode
+    BackHandler(enabled = selecting) { onExitSelection() }
+
+    // Shared row renderer so every section behaves identically.
+    val row: @Composable (AppInfo) -> Unit = { app ->
+        AppRow(
+            app = app,
+            selectionMode = state.selectionMode,
+            selected = app.packageName in state.selection,
+            onClick = { if (state.selectionMode) onToggleSelect(app) else onToggleManaged(app) },
+            onLongClick = { if (!state.selectionMode) onEnterSelection(app) },
+            onToggleWhitelist = { onToggleWhitelist(app) },
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -95,11 +110,19 @@ fun HomeScreen(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
                 ),
+                navigationIcon = {
+                    if (selecting) {
+                        IconButton(onClick = onExitSelection) {
+                            Icon(Icons.Filled.Close, contentDescription = "Exit selection")
+                        }
+                    }
+                },
                 actions = {
                     if (selecting) {
-                        TextButton(onClick = onClearSelection) {
-                            Text("Clear", color = MaterialTheme.colorScheme.onPrimary)
+                        IconButton(onClick = onSelectAll) {
+                            Icon(Icons.Filled.DoneAll, contentDescription = "Select all running")
                         }
                     } else {
                         IconButton(onClick = { searching = !searching }) {
@@ -130,7 +153,7 @@ fun HomeScreen(
                     Text(
                         when {
                             state.hibernatingNow -> "Hibernating…"
-                            selecting -> "Hibernate ${state.selectionCount}"
+                            selecting && state.selectionCount > 0 -> "Hibernate ${state.selectionCount}"
                             else -> "Hibernate all"
                         }
                     )
@@ -146,7 +169,7 @@ fun HomeScreen(
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 96.dp),
         ) {
-            if (!state.usageAccessGranted) {
+            if (!state.usageAccessGranted && !selecting) {
                 item {
                     StatusBanner(
                         icon = Icons.Filled.Bolt,
@@ -177,67 +200,22 @@ fun HomeScreen(
                 }
             }
 
-            // ----- Running (grouped first, selectable) -----
             if (state.running.isNotEmpty()) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 16.dp, end = 8.dp, top = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "RUNNING NOW · ${state.running.size}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            onClick = {
-                                if (state.selectionCount == state.running.size) onClearSelection()
-                                else onSelectAll()
-                            }
-                        ) {
-                            Text(
-                                if (state.selectionCount == state.running.size) "Clear" else "Select all"
-                            )
-                        }
-                    }
-                }
-                items(state.running, key = { "r_${it.packageName}" }) { app ->
-                    AppRow(
-                        app = app,
-                        selectable = true,
-                        selected = app.packageName in state.selection,
-                        onClick = { onToggleSelect(app) },
-                        onToggleWhitelist = { onToggleWhitelist(app) },
-                    )
-                }
+                sectionHeader(
+                    "RUNNING NOW · ${state.running.size}" +
+                        if (!selecting) "   ·   long-press to select" else ""
+                )
+                items(state.running, key = { "r_${it.packageName}" }) { row(it) }
             }
 
-            // ----- Hibernated -----
             if (state.hibernated.isNotEmpty()) {
                 sectionHeader("HIBERNATED")
-                items(state.hibernated, key = { "h_${it.packageName}" }) { app ->
-                    AppRow(
-                        app = app,
-                        onClick = { onToggleManaged(app) },
-                        onToggleWhitelist = { onToggleWhitelist(app) },
-                    )
-                }
+                items(state.hibernated, key = { "h_${it.packageName}" }) { row(it) }
             }
 
-            // ----- All apps / tap to manage -----
             if (state.others.isNotEmpty()) {
                 sectionHeader("ALL APPS · TAP TO MANAGE")
-                items(state.others, key = { "o_${it.packageName}" }) { app ->
-                    AppRow(
-                        app = app,
-                        onClick = { onToggleManaged(app) },
-                        onToggleWhitelist = { onToggleWhitelist(app) },
-                    )
-                }
+                items(state.others, key = { "o_${it.packageName}" }) { row(it) }
             }
 
             if (state.loading) {

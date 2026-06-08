@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.pn.zenify.ZenifyApp
+import com.pn.zenify.accessibility.ForceStopController
 import com.pn.zenify.core.AccessibilityUtil
 import com.pn.zenify.core.HibernationEngine
 import com.pn.zenify.data.AppInfo
@@ -18,8 +19,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,6 +31,7 @@ data class UiState(
     val loading: Boolean = true,
     val apps: List<AppInfo> = emptyList(),
     val query: String = "",
+    val selectionMode: Boolean = false,
     val selection: Set<String> = emptySet(),
     val shizukuState: ShizukuManager.State = ShizukuManager.State.UNAVAILABLE,
     val accessibilityEnabled: Boolean = false,
@@ -100,6 +104,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }.launchIn(viewModelScope)
 
+        // When the accessibility force-stop queue finishes, the apps it stopped
+        // need to move to the hibernated section — refresh automatically.
+        ForceStopController.progress
+            .map { it.active }
+            .distinctUntilChanged()
+            .onEach { active -> if (!active) refresh() }
+            .launchIn(viewModelScope)
+
         refresh()
     }
 
@@ -130,8 +142,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(query = q)
     }
 
-    // ---- Selection ----
+    // ---- Selection (entered via long-press) ----
+    fun enterSelection(app: AppInfo) {
+        _state.value = _state.value.copy(
+            selectionMode = true,
+            selection = setOf(app.packageName),
+        )
+    }
+
     fun toggleSelect(app: AppInfo) {
+        if (!_state.value.selectionMode) return
         val current = _state.value.selection.toMutableSet()
         if (!current.add(app.packageName)) current.remove(app.packageName)
         _state.value = _state.value.copy(selection = current)
@@ -139,12 +159,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectAllRunning() {
         _state.value = _state.value.copy(
-            selection = _state.value.running.map { it.packageName }.toSet()
+            selectionMode = true,
+            selection = _state.value.running.map { it.packageName }.toSet(),
         )
     }
 
-    fun clearSelection() {
-        _state.value = _state.value.copy(selection = emptySet())
+    fun exitSelection() {
+        _state.value = _state.value.copy(selectionMode = false, selection = emptySet())
     }
 
     // ---- Manage / whitelist ----
@@ -188,19 +209,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * Hibernate the current selection, or — if nothing is selected — every
-     * running app. Routes through whichever engine is available.
+     * running app that is safe to stop. Explicit selection overrides the safety
+     * skip (so the user CAN force a keyboard/launcher if they really select it),
+     * while the default "Hibernate all" leaves risky apps running.
      */
     fun hibernateSelectedOrAll() {
         viewModelScope.launch {
             val s = _state.value
-            val targets = if (s.selection.isNotEmpty()) {
-                s.apps.filter { it.packageName in s.selection && !it.whitelisted }
+            val explicit = s.selectionMode && s.selection.isNotEmpty()
+            val targets = if (explicit) {
+                s.apps.filter { it.packageName in s.selection }
             } else {
-                s.running.filter { !it.whitelisted }
+                s.running.filter { !it.whitelisted && !it.risky }
             }.map { it.packageName }
 
             if (targets.isEmpty()) {
-                _events.tryEmit(UiEvent.Message("Nothing running to hibernate."))
+                _events.tryEmit(
+                    UiEvent.Message(
+                        if (!explicit && s.running.any { it.risky })
+                            "Only risky apps are running (e.g. keyboard). Long-press to select them manually."
+                        else "Nothing running to hibernate."
+                    )
+                )
                 return@launch
             }
 
@@ -214,14 +244,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         UiEvent.Message("Hibernating ${targets.size} app(s) via accessibility…")
                     )
                     HibernationEngine.hibernate(zen, targets)
-                    _state.value = _state.value.copy(selection = emptySet())
+                    _state.value = _state.value.copy(selectionMode = false, selection = emptySet())
                 }
                 HibernationEngine.Method.SHIZUKU -> {
                     _state.value = _state.value.copy(hibernatingNow = true)
                     withContext(Dispatchers.Default) {
                         HibernationEngine.hibernate(zen, targets)
                     }
-                    _state.value = _state.value.copy(hibernatingNow = false, selection = emptySet())
+                    _state.value = _state.value.copy(
+                        hibernatingNow = false,
+                        selectionMode = false,
+                        selection = emptySet(),
+                    )
                     _events.tryEmit(UiEvent.Message("Hibernated ${targets.size} app(s)."))
                     refresh()
                 }

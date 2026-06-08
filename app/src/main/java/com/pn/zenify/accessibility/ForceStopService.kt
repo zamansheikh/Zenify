@@ -65,8 +65,8 @@ class ForceStopService : AccessibilityService() {
 
         val clickable = clickableAncestor(button)
         if (clickable == null || !clickable.isEnabled) {
-            // App is already stopped (button greyed out) — nothing to do.
-            finishCurrent()
+            // App is already stopped (button greyed out) — count it as success.
+            finishCurrent(success = true)
             return
         }
         ForceStopController.phase = ForceStopController.Phase.CONFIRM
@@ -79,7 +79,7 @@ class ForceStopService : AccessibilityService() {
         if (confirm != null) {
             val clickable = clickableAncestor(confirm) ?: confirm
             clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            finishCurrent()
+            finishCurrent(success = true)
         }
     }
 
@@ -134,14 +134,14 @@ class ForceStopService : AccessibilityService() {
         handler.postDelayed({
             if (ForceStopController.currentPackage == pkg) {
                 // Button never showed up — skip this one and move on.
-                finishCurrent()
+                finishCurrent(success = false)
             }
         }, 4000)
     }
 
-    private fun finishCurrent() {
+    private fun finishCurrent(success: Boolean) {
         handler.removeCallbacksAndMessages(null)
         watchdogPackage = null
-        ForceStopController.onPackageHandled()
+        ForceStopController.onPackageHandled(success)
     }
 }
