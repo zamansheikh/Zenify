@@ -22,12 +22,13 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
-import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +58,8 @@ import com.pn.zenify.ui.UiEvent
 import com.pn.zenify.ui.UiState
 import com.pn.zenify.ui.components.AppRow
 import com.pn.zenify.ui.components.StatusBanner
+import com.pn.zenify.ui.theme.OnZenBrand
+import com.pn.zenify.ui.theme.ZenBrand
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 
@@ -118,16 +121,16 @@ fun HomeScreen(
                             Text(
                                 state.summary,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                                color = OnZenBrand.copy(alpha = 0.85f),
                             )
                         }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    containerColor = ZenBrand,
+                    titleContentColor = OnZenBrand,
+                    actionIconContentColor = OnZenBrand,
+                    navigationIconContentColor = OnZenBrand,
                 ),
                 navigationIcon = {
                     if (selecting) {
@@ -153,31 +156,37 @@ fun HomeScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = onHibernate,
-                expanded = !state.hibernatingNow,
-                icon = {
+            val showCount = selecting && state.selectionCount > 0
+            BadgedBox(
+                badge = {
+                    if (showCount) {
+                        Badge(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ) { Text("${state.selectionCount}") }
+                    }
+                }
+            ) {
+                FloatingActionButton(
+                    onClick = onHibernate,
+                    containerColor = ZenBrand,
+                    contentColor = OnZenBrand,
+                ) {
                     if (state.hibernatingNow) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(22.dp),
+                            modifier = Modifier.size(24.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = OnZenBrand,
                         )
                     } else {
-                        Icon(Icons.Filled.DarkMode, contentDescription = null)
+                        Icon(
+                            Icons.Filled.DarkMode,
+                            contentDescription = if (showCount)
+                                "Hibernate ${state.selectionCount}" else "Hibernate all",
+                        )
                     }
-                },
-                text = {
-                    Text(
-                        if (selecting && state.selectionCount > 0)
-                            "Hibernate ${state.selectionCount}"
-                        else "Hibernate all"
-                    )
-                },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
-            )
+                }
+            }
         },
     ) { padding ->
         PullToRefreshBox(

@@ -19,10 +19,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -112,12 +110,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }.launchIn(viewModelScope)
 
-        // When the accessibility force-stop queue finishes, the apps it stopped
-        // need to move to the hibernated section — refresh automatically.
+        // When the accessibility force-stop queue finishes, refresh so stopped
+        // apps move to the hibernated section, and report what couldn't be
+        // stopped (disabled "Force stop" buttons on protected apps).
+        var wasActive = false
         ForceStopController.progress
-            .map { it.active }
-            .distinctUntilChanged()
-            .onEach { active -> if (!active) refresh() }
+            .onEach { p ->
+                if (wasActive && !p.active) {
+                    refresh()
+                    val msg = buildString {
+                        append("Hibernated ${p.done}")
+                        if (p.skipped > 0) append(" · skipped ${p.skipped} (can't be stopped)")
+                    }
+                    _events.tryEmit(UiEvent.Message(msg))
+                }
+                wasActive = p.active
+            }
             .launchIn(viewModelScope)
 
         refresh()
@@ -242,6 +250,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
+            // Apps the OS won't let us force-stop — so the accessibility engine
+            // skips them honestly instead of marking them stopped.
+            val protectedPackages = s.apps.filter { it.risky }.map { it.packageName }.toSet()
+
             when (HibernationEngine.method(zen)) {
                 HibernationEngine.Method.NONE -> {
                     _events.tryEmit(UiEvent.OpenEngineSetup)
@@ -251,12 +263,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _events.tryEmit(
                         UiEvent.Message("Hibernating ${targets.size} app(s) via accessibility…")
                     )
-                    HibernationEngine.hibernate(zen, targets)
+                    HibernationEngine.hibernate(zen, targets, protectedPackages)
                     _state.value = _state.value.copy(selectionMode = false, selection = emptySet())
                 }
                 HibernationEngine.Method.SHIZUKU -> {
                     _state.value = _state.value.copy(hibernatingNow = true)
-                    withContext(Dispatchers.Default) {
+                    val result = withContext(Dispatchers.Default) {
                         HibernationEngine.hibernate(zen, targets)
                     }
                     _state.value = _state.value.copy(
@@ -264,7 +276,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         selectionMode = false,
                         selection = emptySet(),
                     )
-                    _events.tryEmit(UiEvent.Message("Hibernated ${targets.size} app(s)."))
+                    val failed = result.failed.size
+                    _events.tryEmit(
+                        UiEvent.Message(
+                            buildString {
+                                append("Hibernated ${result.succeeded.size}")
+                                if (failed > 0) append(" · $failed couldn't be stopped")
+                            }
+                        )
+                    )
                     refresh()
                 }
             }

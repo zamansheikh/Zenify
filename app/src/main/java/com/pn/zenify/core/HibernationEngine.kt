@@ -26,12 +26,16 @@ object HibernationEngine {
      * automation and returns optimistically (true outcome is observed on the
      * next refresh once the user returns to Zenify).
      */
-    suspend fun hibernate(context: Context, packages: List<String>): HibernateResult {
+    suspend fun hibernate(
+        context: Context,
+        packages: List<String>,
+        protectedPackages: Set<String> = emptySet(),
+    ): HibernateResult {
         if (packages.isEmpty()) return HibernateResult(emptyList(), emptyList())
         return when (method(context)) {
             Method.SHIZUKU -> Hibernator.hibernate(packages)
             Method.ACCESSIBILITY -> {
-                ForceStopController.enqueue(context, packages)
+                ForceStopController.enqueue(context, packages, protectedPackages)
                 HibernateResult(packages, packages)
             }
             Method.NONE -> HibernateResult(packages, emptyList())

@@ -30,7 +30,11 @@ class AppRepository(private val context: Context) {
     private val usm: UsageStatsManager =
         context.getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
 
-    /** Apps idle longer than this are considered stopped/asleep. */
+    /**
+     * Fallback only (no Shizuku): an app foregrounded within this window is
+     * treated as still running. Based on real foreground events (not the
+     * blip-prone "last used" time), so it shows apps you actually opened.
+     */
     private val activeWindowMs = 30 * 60 * 1000L
 
     private companion object {
@@ -39,6 +43,10 @@ class AppRepository(private val context: Context) {
         const val IMPORTANCE_FOREGROUND_SERVICE = 125
         const val IMPORTANCE_SERVICE = 300
         const val IMPORTANCE_GONE = 1000
+
+        // Foreground/background state machine markers.
+        const val STATE_FG = 1
+        const val STATE_BG = 0
     }
 
     fun hasUsageAccess(): Boolean {
@@ -62,7 +70,7 @@ class AppRepository(private val context: Context) {
     ): List<AppInfo> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val lastUsedMap = lastUsedByPackage(now)
-        val foreground = currentForegroundPackage(now)
+        val (fgActive, fgTop) = foregroundActivity(now)
         val self = context.packageName
 
         val launchable = launchablePackages()
@@ -80,7 +88,7 @@ class AppRepository(private val context: Context) {
 
                 val pkg = ai.packageName
                 val lastUsed = lastUsedMap[pkg] ?: 0L
-                val state = classify(pkg, lastUsed, now, foreground, importance)
+                val state = classify(pkg, lastUsed, importance, fgActive, fgTop)
                 val reason = riskReasons[pkg]
                 val isIme = reason == "Active keyboard"
                 AppInfo(
@@ -103,14 +111,15 @@ class AppRepository(private val context: Context) {
 
     /**
      * Decides a [RunState]. Prefers real ActivityManager importance (via
-     * Shizuku); falls back to a usage-stats heuristic when that map is empty.
+     * Shizuku); falls back to foreground/background usage events when that map
+     * is empty.
      */
     private fun classify(
         pkg: String,
         lastUsed: Long,
-        now: Long,
-        foreground: String?,
         importance: Map<String, Int>,
+        fgActive: Set<String>,
+        fgTop: String?,
     ): RunState {
         // We just force-stopped it — trust that over stale usage/importance data.
         if (HibernationTracker.isHibernated(pkg, lastUsed)) return RunState.STOPPED
@@ -126,10 +135,13 @@ class AppRepository(private val context: Context) {
             }
         }
 
-        // Fallback: no privileged data.
+        // Fallback (no Shizuku): only trust the foreground event stream. An app
+        // is "running" only if its latest event was move-to-foreground with no
+        // later move-to-background — this ignores the background usage blips
+        // (sync, notifications) that make a stale "last used" time lie.
         return when {
-            pkg == foreground -> RunState.FOREGROUND
-            lastUsed > 0 && (now - lastUsed) <= activeWindowMs -> RunState.WORKING
+            pkg == fgTop -> RunState.FOREGROUND
+            pkg in fgActive -> RunState.WORKING
             else -> RunState.STOPPED
         }
     }
@@ -206,19 +218,42 @@ class AppRepository(private val context: Context) {
         return map
     }
 
-    /** The package that most recently moved to foreground in the last hour. */
-    private fun currentForegroundPackage(now: Long): String? {
-        val events = usm.queryEvents(now - 60 * 60 * 1000, now)
+    /**
+     * Replays usage events to find recently-running apps. We key off actual
+     * MOVE_TO_FOREGROUND events (when the app was really opened) rather than the
+     * "last used" timestamp, which background sync/notifications bump and which
+     * therefore produced false positives. An app foregrounded within the window
+     * is treated as still running (its process usually lingers), even once it's
+     * been backgrounded — so the app you just opened still shows up.
+     *
+     * @return (recently-foregrounded packages, the app currently in foreground).
+     */
+    private fun foregroundActivity(now: Long): Pair<Set<String>, String?> {
+        val events = usm.queryEvents(now - 6 * 60 * 60 * 1000, now)
         val e = UsageEvents.Event()
-        var last: String? = null
+        val lastFgTime = HashMap<String, Long>()
+        val lastState = HashMap<String, Int>()   // pkg -> FG/BG
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
-            if (e.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
-                e.eventType == UsageEvents.Event.ACTIVITY_RESUMED
-            ) {
-                last = e.packageName
+            when (e.eventType) {
+                UsageEvents.Event.MOVE_TO_FOREGROUND -> {
+                    lastFgTime[e.packageName] = e.timeStamp
+                    lastState[e.packageName] = STATE_FG
+                }
+                UsageEvents.Event.MOVE_TO_BACKGROUND -> {
+                    lastState[e.packageName] = STATE_BG
+                }
             }
         }
-        return last
+        // Recently opened → likely still alive in the background.
+        val active = lastFgTime
+            .filter { (now - it.value) <= activeWindowMs }
+            .keys
+        // The single app still in the foreground state (most recent).
+        val top = lastState.entries
+            .filter { it.value == STATE_FG }
+            .maxByOrNull { lastFgTime[it.key] ?: 0L }
+            ?.key
+        return active to top
     }
 }

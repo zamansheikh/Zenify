@@ -18,6 +18,13 @@ import androidx.compose.ui.unit.sp
 private val ZenGreen = Color(0xFF2E7D52)
 private val ZenGreenDark = Color(0xFF6FD79B)
 
+/**
+ * Fixed brand colors for the top bar + FAB, so they always match the leaf logo
+ * regardless of the (possibly non-green) Material You dynamic palette.
+ */
+val ZenBrand = Color(0xFF1B5E3A)
+val OnZenBrand = Color(0xFFFFFFFF)
+
 private val LightColors = lightColorScheme(
     primary = ZenGreen,
     onPrimary = Color.White,
