@@ -13,6 +13,7 @@ import androidx.core.app.NotificationCompat
 import com.pn.zenify.R
 import com.pn.zenify.ZenifyApp
 import com.pn.zenify.core.Hibernator
+import com.pn.zenify.core.HibernationEngine
 import com.pn.zenify.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +78,15 @@ class HibernationService : Service() {
 
     private suspend fun runPass(immediate: Boolean) {
         val app = applicationContext as ZenifyApp
+        // Background auto-hibernation only runs silently via Shizuku. The
+        // accessibility path drives visible system UI, which would be hostile
+        // to fire unprompted, so we skip passes when Shizuku isn't ready.
+        if (HibernationEngine.method(app) != HibernationEngine.Method.SHIZUKU) {
+            watchedCount = 0
+            lastHibernated = 0
+            updateNotification()
+            return
+        }
         val managed = app.prefs.managed.first()
         val whitelist = app.prefs.whitelist.first()
         val showSystem = app.prefs.showSystem.first()

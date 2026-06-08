@@ -10,9 +10,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.pn.zenify.ui.screens.EngineSetupScreen
 import com.pn.zenify.ui.screens.HomeScreen
 import com.pn.zenify.ui.screens.SettingsScreen
 import com.pn.zenify.ui.theme.ZenifyTheme
+
+private enum class Screen { HOME, SETTINGS, ENGINE }
 
 class MainActivity : ComponentActivity() {
 
@@ -24,28 +27,37 @@ class MainActivity : ComponentActivity() {
         setContent {
             ZenifyTheme {
                 val state by viewModel.state.collectAsStateWithLifecycle()
-                var showSettings by remember { mutableStateOf(false) }
+                var screen by remember { mutableStateOf(Screen.HOME) }
 
-                if (showSettings) {
-                    SettingsScreen(
+                when (screen) {
+                    Screen.HOME -> HomeScreen(
                         state = state,
-                        onBack = { showSettings = false },
+                        events = viewModel.events,
+                        onQueryChange = viewModel::setQuery,
+                        onToggleSelect = viewModel::toggleSelect,
+                        onSelectAll = viewModel::selectAllRunning,
+                        onClearSelection = viewModel::clearSelection,
+                        onToggleManaged = viewModel::toggleManaged,
+                        onToggleWhitelist = viewModel::toggleWhitelist,
+                        onHibernate = viewModel::hibernateSelectedOrAll,
+                        onOpenSettings = { screen = Screen.SETTINGS },
+                        onOpenEngineSetup = { screen = Screen.ENGINE },
+                    )
+
+                    Screen.SETTINGS -> SettingsScreen(
+                        state = state,
+                        onBack = { screen = Screen.HOME },
                         onToggleAuto = viewModel::setAutoHibernate,
                         onDelayChange = viewModel::setDelayMinutes,
                         onToggleShowSystem = viewModel::setShowSystem,
                         onToggleScreenOff = viewModel::setHibernateOnScreenOff,
-                        onRequestShizuku = viewModel::requestShizuku,
+                        onOpenEngineSetup = { screen = Screen.ENGINE },
                     )
-                } else {
-                    HomeScreen(
+
+                    Screen.ENGINE -> EngineSetupScreen(
                         state = state,
-                        onQueryChange = viewModel::setQuery,
-                        onToggleManaged = viewModel::toggleManaged,
-                        onToggleWhitelist = viewModel::toggleWhitelist,
-                        onHibernateNow = viewModel::hibernateNow,
+                        onBack = { screen = Screen.SETTINGS },
                         onRequestShizuku = viewModel::requestShizuku,
-                        onOpenSettings = { showSettings = true },
-                        onRefresh = viewModel::refresh,
                     )
                 }
             }

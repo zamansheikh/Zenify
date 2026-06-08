@@ -17,4 +17,8 @@
     <string name="shizuku_not_running">Shizuku isn\'t running. Start Shizuku, then grant access.</string>
     <string name="shizuku_not_granted">Tap to grant Zenify access to Shizuku.</string>
     <string name="shizuku_ready">Shizuku connected — hibernation is ready.</string>
+
+    <!-- Accessibility force-stop service -->
+    <string name="accessibility_label">Zenify hibernation</string>
+    <string name="accessibility_description">Lets Zenify hibernate apps without root by opening each app\'s info screen and tapping \"Force stop\" for you. Zenify only acts on apps you choose to hibernate and never reads your screen content.</string>
 </resources>

@@ -1,6 +1,7 @@
 package com.pn.zenify.ui.components
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.outlined.Bedtime
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -33,18 +35,31 @@ fun AppRow(
     onClick: () -> Unit,
     onToggleWhitelist: () -> Unit,
     modifier: Modifier = Modifier,
+    selectable: Boolean = false,
+    selected: Boolean = false,
 ) {
+    val container = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ListItem(
-        modifier = modifier,
+        modifier = modifier
+            .background(container)
+            .clickable(onClick = onClick),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
         leadingContent = {
-            AsyncImage(
-                model = app.icon,
-                contentDescription = null,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape),
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (selectable) {
+                    Checkbox(
+                        checked = selected,
+                        onCheckedChange = { onClick() },
+                    )
+                }
+                AsyncImage(
+                    model = app.icon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape),
+                )
+            }
         },
         headlineContent = { Text(app.label) },
         supportingContent = { Text(stateLabel(app), style = MaterialTheme.typography.bodySmall) },
@@ -80,7 +95,7 @@ private fun StateDot(state: RunState) {
             .padding(end = 4.dp)
             .size(10.dp)
             .clip(CircleShape)
-            .then(Modifier.background(color))
+            .background(color)
     )
 }
 
