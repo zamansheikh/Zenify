@@ -128,6 +128,30 @@ object ShizukuManager {
     }
 
     /**
+     * Live process importance per package (ActivityManager importance values).
+     * Empty when Shizuku isn't ready. Lets us label apps Greenify-style.
+     */
+    suspend fun runningImportance(): Map<String, Int> {
+        val svc = ensureUserService() ?: return emptyMap()
+        return try {
+            val dump = svc.dumpProcesses()
+            if (dump.isBlank() || dump.startsWith("error", ignoreCase = true)) return emptyMap()
+            dump.lineSequence()
+                .mapNotNull { line ->
+                    val idx = line.lastIndexOf('=')
+                    if (idx <= 0) return@mapNotNull null
+                    val pkg = line.substring(0, idx)
+                    val imp = line.substring(idx + 1).trim().toIntOrNull() ?: return@mapNotNull null
+                    pkg to imp
+                }
+                .toMap()
+        } catch (t: Throwable) {
+            Log.w(TAG, "runningImportance failed", t)
+            emptyMap()
+        }
+    }
+
+    /**
      * Hibernate one package. Returns true on success.
      */
     suspend fun hibernate(packageName: String): Boolean {

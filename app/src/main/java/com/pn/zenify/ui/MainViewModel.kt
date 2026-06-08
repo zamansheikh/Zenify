@@ -47,22 +47,30 @@ data class UiState(
         get() = if (query.isBlank()) apps
         else apps.filter { it.label.contains(query, ignoreCase = true) }
 
-    /** Running/awake apps — grouped first, foreground on top. */
+    /** Actively running apps — grouped first, most-important on top. */
     val running: List<AppInfo>
         get() = filtered.filter { it.isActive }
-            .sortedWith(compareByDescending<AppInfo> { it.runState == RunState.FOREGROUND }
-                .thenBy { it.label.lowercase() })
+            .sortedWith(compareBy<AppInfo> { it.runState.ordinal }.thenBy { it.label.lowercase() })
 
-    /** Managed apps that are currently stopped. */
+    /** Cached/background-free apps — running but harmless ("no need"). */
+    val cached: List<AppInfo>
+        get() = filtered.filter { it.isCached }
+
+    /** Managed apps that are stopped. */
     val hibernated: List<AppInfo>
-        get() = filtered.filter { it.managed && !it.isActive }
+        get() = filtered.filter { it.managed && it.runState == RunState.STOPPED }
 
-    /** Everything else (idle, unmanaged or managed-but-asleep non-running). */
+    /** Unmanaged, stopped apps. */
     val others: List<AppInfo>
-        get() = filtered.filter { !it.isActive && !it.managed }
+        get() = filtered.filter { !it.managed && it.runState == RunState.STOPPED }
 
     val selectionCount: Int get() = selection.size
     val hasEngine: Boolean get() = engineMethod != HibernationEngine.Method.NONE
+
+    /** Top-bar summary line. */
+    val summary: String
+        get() = "${apps.count { it.isActive }} active · ${apps.count { it.isCached }} cached · " +
+            "${apps.count { it.runState == RunState.STOPPED }} asleep"
 }
 
 /** One-shot messages for the UI (snackbars). */

@@ -12,6 +12,7 @@ import android.os.Process
 import android.view.accessibility.AccessibilityManager
 import android.view.inputmethod.InputMethodManager
 import com.pn.zenify.core.HibernationTracker
+import com.pn.zenify.shizuku.ShizukuManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -31,6 +32,14 @@ class AppRepository(private val context: Context) {
 
     /** Apps idle longer than this are considered stopped/asleep. */
     private val activeWindowMs = 30 * 60 * 1000L
+
+    private companion object {
+        // android.app.ActivityManager.RunningAppProcessInfo importance values.
+        const val IMPORTANCE_FOREGROUND = 100
+        const val IMPORTANCE_FOREGROUND_SERVICE = 125
+        const val IMPORTANCE_SERVICE = 300
+        const val IMPORTANCE_GONE = 1000
+    }
 
     fun hasUsageAccess(): Boolean {
         return try {
@@ -58,6 +67,7 @@ class AppRepository(private val context: Context) {
 
         val launchable = launchablePackages()
         val riskReasons = riskyPackages()
+        val importance = ShizukuManager.runningImportance()
 
         pm.getInstalledApplications(0)
             .asSequence()
@@ -70,20 +80,16 @@ class AppRepository(private val context: Context) {
 
                 val pkg = ai.packageName
                 val lastUsed = lastUsedMap[pkg] ?: 0L
-                val state = when {
-                    // We just force-stopped it; trust that over stale usage data.
-                    HibernationTracker.isHibernated(pkg, lastUsed) -> RunState.STOPPED
-                    pkg == foreground -> RunState.FOREGROUND
-                    lastUsed > 0 && (now - lastUsed) <= activeWindowMs -> RunState.RUNNING
-                    else -> RunState.STOPPED
-                }
+                val state = classify(pkg, lastUsed, now, foreground, importance)
                 val reason = riskReasons[pkg]
+                val isIme = reason == "Active keyboard"
                 AppInfo(
                     packageName = pkg,
                     label = pm.getApplicationLabel(ai).toString(),
                     icon = runCatching { pm.getApplicationIcon(ai) }.getOrNull(),
                     isSystem = isSystem,
                     runState = state,
+                    detail = detailFor(state, isIme, managed.contains(pkg), lastUsed),
                     lastUsed = lastUsed,
                     managed = pkg in managed,
                     whitelisted = pkg in whitelist,
@@ -93,6 +99,54 @@ class AppRepository(private val context: Context) {
             }
             .sortedBy { it.label.lowercase() }
             .toList()
+    }
+
+    /**
+     * Decides a [RunState]. Prefers real ActivityManager importance (via
+     * Shizuku); falls back to a usage-stats heuristic when that map is empty.
+     */
+    private fun classify(
+        pkg: String,
+        lastUsed: Long,
+        now: Long,
+        foreground: String?,
+        importance: Map<String, Int>,
+    ): RunState {
+        // We just force-stopped it — trust that over stale usage/importance data.
+        if (HibernationTracker.isHibernated(pkg, lastUsed)) return RunState.STOPPED
+
+        if (importance.isNotEmpty()) {
+            val imp = importance[pkg] ?: return RunState.STOPPED
+            return when {
+                imp <= IMPORTANCE_FOREGROUND -> RunState.FOREGROUND
+                imp <= IMPORTANCE_FOREGROUND_SERVICE -> RunState.FOREGROUND_SERVICE
+                imp <= IMPORTANCE_SERVICE -> RunState.WORKING
+                imp < IMPORTANCE_GONE -> RunState.CACHED
+                else -> RunState.STOPPED
+            }
+        }
+
+        // Fallback: no privileged data.
+        return when {
+            pkg == foreground -> RunState.FOREGROUND
+            lastUsed > 0 && (now - lastUsed) <= activeWindowMs -> RunState.WORKING
+            else -> RunState.STOPPED
+        }
+    }
+
+    private fun detailFor(state: RunState, isIme: Boolean, managed: Boolean, lastUsed: Long): String {
+        if (isIme && state != RunState.STOPPED) return "Being used by input method"
+        return when (state) {
+            RunState.FOREGROUND -> "In use right now"
+            RunState.FOREGROUND_SERVICE -> "Running as foreground"
+            RunState.WORKING -> "Working"
+            RunState.CACHED -> "Background-free (cached)"
+            RunState.STOPPED -> when {
+                managed -> "Hibernated"
+                lastUsed == 0L -> "Idle · not used recently"
+                else -> "Idle"
+            }
+        }
     }
 
     /**

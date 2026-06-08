@@ -2,13 +2,21 @@ package com.pn.zenify.data
 
 import android.graphics.drawable.Drawable
 
-/** Coarse running state derived from UsageStats + RunningAppProcesses. */
+/**
+ * Process state, mirroring the granularity Greenify shows. With Shizuku we know
+ * the real [android.app.ActivityManager] importance; without it we collapse to
+ * FOREGROUND / WORKING / STOPPED from usage stats.
+ */
 enum class RunState {
-    /** Has a process and is/was recently in the foreground. */
+    /** Top / visible to the user right now. */
     FOREGROUND,
-    /** Has a live background process. */
-    RUNNING,
-    /** No live process we can see — effectively asleep. */
+    /** Running a foreground service (evades background limits). */
+    FOREGROUND_SERVICE,
+    /** Has a running service or is perceptible — actively doing work. */
+    WORKING,
+    /** Process exists but is cached/background — harmless, no need to hibernate. */
+    CACHED,
+    /** No live process — asleep. */
     STOPPED,
 }
 
@@ -18,6 +26,8 @@ data class AppInfo(
     val icon: Drawable?,
     val isSystem: Boolean,
     val runState: RunState,
+    /** Greenify-style status line, e.g. "Background-free (cached)". */
+    val detail: String,
     /** Last time the app was used, epoch millis (0 if unknown). */
     val lastUsed: Long,
     /** User chose to manage (hibernate) this app. */
@@ -29,5 +39,11 @@ data class AppInfo(
     /** Short reason shown to the user when [risky]. */
     val riskReason: String? = null,
 ) {
-    val isActive: Boolean get() = runState != RunState.STOPPED
+    /** Actively running (worth hibernating). Cached apps are NOT active. */
+    val isActive: Boolean
+        get() = runState == RunState.FOREGROUND ||
+            runState == RunState.FOREGROUND_SERVICE ||
+            runState == RunState.WORKING
+
+    val isCached: Boolean get() = runState == RunState.CACHED
 }

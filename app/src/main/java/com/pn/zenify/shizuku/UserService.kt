@@ -42,6 +42,37 @@ class UserService : IUserService.Stub {
         return out.trim()
     }
 
+    /**
+     * Reads live process importance for every app. Running as the shell uid we
+     * have REAL_GET_TASKS, so [android.app.ActivityManager.getRunningAppProcesses]
+     * returns the whole system, not just us. Returns "pkg=importance" lines.
+     */
+    override fun dumpProcesses(): String {
+        return try {
+            val activityThread = Class.forName("android.app.ActivityThread")
+            val systemMain = activityThread.getMethod("systemMain").invoke(null)
+            val context = activityThread.getMethod("getSystemContext").invoke(systemMain)
+                as android.content.Context
+            val am = context.getSystemService(android.content.Context.ACTIVITY_SERVICE)
+                as android.app.ActivityManager
+
+            val sb = StringBuilder()
+            val best = HashMap<String, Int>()
+            am.runningAppProcesses?.forEach { proc ->
+                val pkgs = proc.pkgList ?: arrayOf(proc.processName)
+                for (pkg in pkgs) {
+                    val prev = best[pkg]
+                    // Lower importance value == more important; keep the strongest.
+                    if (prev == null || proc.importance < prev) best[pkg] = proc.importance
+                }
+            }
+            best.forEach { (pkg, imp) -> sb.append(pkg).append('=').append(imp).append('\n') }
+            sb.toString()
+        } catch (t: Throwable) {
+            "error: ${t.message}"
+        }
+    }
+
     private fun runCommand(argv: List<String>): String {
         return try {
             val process = ProcessBuilder(argv)

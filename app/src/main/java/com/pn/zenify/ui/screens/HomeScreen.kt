@@ -3,24 +3,31 @@ package com.pn.zenify.ui.screens
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bedtime
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -29,8 +36,10 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -57,6 +66,7 @@ fun HomeScreen(
     state: UiState,
     events: SharedFlow<UiEvent>,
     onQueryChange: (String) -> Unit,
+    onRefresh: () -> Unit,
     onEnterSelection: (AppInfo) -> Unit,
     onToggleSelect: (AppInfo) -> Unit,
     onSelectAll: () -> Unit,
@@ -84,7 +94,6 @@ fun HomeScreen(
     val selecting = state.selectionMode
     BackHandler(enabled = selecting) { onExitSelection() }
 
-    // Shared row renderer so every section behaves identically.
     val row: @Composable (AppInfo) -> Unit = { app ->
         AppRow(
             app = app,
@@ -101,10 +110,18 @@ fun HomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        if (selecting) "${state.selectionCount} selected" else "Zenify",
-                        fontWeight = FontWeight.Bold,
-                    )
+                    if (selecting) {
+                        Text("${state.selectionCount} selected", fontWeight = FontWeight.Bold)
+                    } else {
+                        Column {
+                            Text("Zenify", fontWeight = FontWeight.Bold)
+                            Text(
+                                state.summary,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -138,106 +155,147 @@ fun HomeScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = onHibernate,
+                expanded = !state.hibernatingNow,
                 icon = {
                     if (state.hibernatingNow) {
                         CircularProgressIndicator(
-                            modifier = Modifier.padding(2.dp),
+                            modifier = Modifier.size(22.dp),
                             strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
                         )
                     } else {
-                        Icon(Icons.Filled.Bedtime, contentDescription = null)
+                        Icon(Icons.Filled.DarkMode, contentDescription = null)
                     }
                 },
                 text = {
                     Text(
-                        when {
-                            state.hibernatingNow -> "Hibernating…"
-                            selecting && state.selectionCount > 0 -> "Hibernate ${state.selectionCount}"
-                            else -> "Hibernate all"
-                        }
+                        if (selecting && state.selectionCount > 0)
+                            "Hibernate ${state.selectionCount}"
+                        else "Hibernate all"
                     )
                 },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp),
             )
         },
     ) { padding ->
-        LazyColumn(
+        PullToRefreshBox(
+            isRefreshing = state.loading,
+            onRefresh = onRefresh,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(bottom = 96.dp),
         ) {
-            if (!state.usageAccessGranted && !selecting) {
-                item {
-                    StatusBanner(
-                        icon = Icons.Filled.Bolt,
-                        title = "Grant usage access",
-                        subtitle = "Zenify needs this to detect which apps are awake.",
-                        actionable = true,
-                        onClick = {
-                            context.startActivity(
-                                Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                        },
-                    )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 110.dp),
+            ) {
+                if (!state.usageAccessGranted && !selecting) {
+                    item {
+                        StatusBanner(
+                            icon = Icons.Filled.Bolt,
+                            title = "Grant usage access",
+                            subtitle = "Zenify needs this to detect which apps are awake.",
+                            actionable = true,
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            },
+                        )
+                    }
                 }
-            }
 
-            if (searching && !selecting) {
-                item {
-                    OutlinedTextField(
-                        value = state.query,
-                        onValueChange = onQueryChange,
-                        placeholder = { Text("Search apps") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        singleLine = true,
-                    )
+                if (searching && !selecting) {
+                    item {
+                        OutlinedTextField(
+                            value = state.query,
+                            onValueChange = onQueryChange,
+                            placeholder = { Text("Search apps") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            singleLine = true,
+                        )
+                    }
                 }
-            }
 
-            if (state.running.isNotEmpty()) {
-                sectionHeader(
-                    "RUNNING NOW · ${state.running.size}" +
-                        if (!selecting) "   ·   long-press to select" else ""
+                groupCard(
+                    title = "RUNNING NOW · ${state.running.size}",
+                    hint = if (!selecting) "long-press to select" else null,
+                    apps = state.running,
+                    row = row,
                 )
-                items(state.running, key = { "r_${it.packageName}" }) { row(it) }
-            }
+                groupCard(
+                    title = "NO NEED TO HIBERNATE · ${state.cached.size}",
+                    hint = "background-free",
+                    apps = state.cached,
+                    row = row,
+                )
+                groupCard(
+                    title = "HIBERNATED · ${state.hibernated.size}",
+                    hint = null,
+                    apps = state.hibernated,
+                    row = row,
+                )
 
-            if (state.hibernated.isNotEmpty()) {
-                sectionHeader("HIBERNATED")
-                items(state.hibernated, key = { "h_${it.packageName}" }) { row(it) }
-            }
-
-            if (state.others.isNotEmpty()) {
-                sectionHeader("ALL APPS · TAP TO MANAGE")
-                items(state.others, key = { "o_${it.packageName}" }) { row(it) }
-            }
-
-            if (state.loading) {
-                item {
-                    Box(
-                        Modifier.fillMaxWidth().padding(32.dp),
-                        contentAlignment = Alignment.Center,
-                    ) { CircularProgressIndicator() }
+                if (state.others.isNotEmpty()) {
+                    item { SectionLabel("ALL APPS · TAP TO MANAGE", null) }
+                    items(state.others, key = { "o_${it.packageName}" }) { row(it) }
                 }
             }
         }
     }
 }
 
-private fun LazyListScope.sectionHeader(text: String) {
+/** A short section rendered as a rounded grouped card. */
+private fun LazyListScope.groupCard(
+    title: String,
+    hint: String?,
+    apps: List<AppInfo>,
+    row: @Composable (AppInfo) -> Unit,
+) {
+    if (apps.isEmpty()) return
     item {
+        Column {
+            SectionLabel(title, hint)
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp),
+                ),
+            ) {
+                Column { apps.forEach { row(it) } }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String, hint: String?) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall,
+            style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, top = 18.dp, bottom = 4.dp),
         )
+        if (hint != null) {
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

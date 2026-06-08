@@ -34,6 +34,7 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         events = viewModel.events,
                         onQueryChange = viewModel::setQuery,
+                        onRefresh = viewModel::refresh,
                         onEnterSelection = viewModel::enterSelection,
                         onToggleSelect = viewModel::toggleSelect,
                         onSelectAll = viewModel::selectAllRunning,

@@ -14,4 +14,9 @@ interface IUserService {
     // Convenience: hibernate a single package. Returns "" on success or an
     // error string on failure.
     String forceStop(String packageName) = 3;
+
+    // Newline-separated "package=importance" pairs for every running process,
+    // using ActivityManager.RunningAppProcessInfo importance values. Lets the
+    // app label apps like Greenify (working / cached / foreground / etc.).
+    String dumpProcesses() = 4;
 }

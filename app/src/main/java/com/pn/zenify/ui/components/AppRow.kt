@@ -3,12 +3,8 @@ package com.pn.zenify.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
@@ -29,7 +25,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.pn.zenify.data.AppInfo
-import com.pn.zenify.data.RunState
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -63,57 +58,34 @@ fun AppRow(
             }
         },
         headlineContent = { Text(app.label) },
-        supportingContent = { Text(supportingText(app), style = MaterialTheme.typography.bodySmall) },
-        trailingContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        supportingContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+            ) {
+                StatusPill(state = app.runState, text = app.detail)
                 if (app.risky) {
                     Icon(
                         imageVector = Icons.Filled.WarningAmber,
                         contentDescription = "Risky to force-stop",
                         tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.padding(end = 6.dp).size(18.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                 }
-                if (app.managed) {
-                    IconButton(onClick = onToggleWhitelist) {
-                        Icon(
-                            imageVector = if (app.whitelisted) Icons.Filled.Lock
-                            else Icons.Outlined.Bedtime,
-                            contentDescription = if (app.whitelisted) "Whitelisted" else "Hibernates",
-                            tint = if (app.whitelisted) MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.primary,
-                        )
-                    }
+            }
+        },
+        trailingContent = {
+            if (app.managed) {
+                IconButton(onClick = onToggleWhitelist) {
+                    Icon(
+                        imageVector = if (app.whitelisted) Icons.Filled.Lock
+                        else Icons.Outlined.Bedtime,
+                        contentDescription = if (app.whitelisted) "Whitelisted" else "Hibernates",
+                        tint = if (app.whitelisted) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.primary,
+                    )
                 }
-                StateDot(app.runState)
-                Spacer(Modifier.width(4.dp))
             }
         },
     )
-}
-
-@Composable
-private fun StateDot(state: RunState) {
-    val color = when (state) {
-        RunState.FOREGROUND -> MaterialTheme.colorScheme.primary
-        RunState.RUNNING -> MaterialTheme.colorScheme.tertiary
-        RunState.STOPPED -> MaterialTheme.colorScheme.outlineVariant
-    }
-    Box(
-        Modifier
-            .padding(end = 4.dp)
-            .size(10.dp)
-            .clip(CircleShape)
-            .background(color)
-    )
-}
-
-private fun supportingText(app: AppInfo): String = when {
-    app.risky && app.riskReason != null -> "${app.riskReason} · skipped by default"
-    app.whitelisted -> "Won't hibernate"
-    app.runState == RunState.FOREGROUND -> "In use right now"
-    app.runState == RunState.RUNNING -> "Running in background"
-    app.managed -> "Hibernated"
-    app.lastUsed == 0L -> "Idle · not used recently"
-    else -> "Idle"
 }
