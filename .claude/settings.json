@@ -16,7 +16,9 @@
       "Bash(./gradlew :app:assembleDebug --no-daemon -q)",
       "Bash(./gradlew :app:assembleRelease --no-daemon)",
       "PowerShell(& \"f:/PN_Apps/Zenify/zenify.ps1\" install-release -NoLaunch)",
-      "PowerShell(& \"f:/PN_Apps/Zenify/zenify.ps1\" run 2>&1)"
+      "PowerShell(& \"f:/PN_Apps/Zenify/zenify.ps1\" run 2>&1)",
+      "Bash(adb uninstall *)",
+      "Bash(adb logcat *)"
     ]
   }
 }

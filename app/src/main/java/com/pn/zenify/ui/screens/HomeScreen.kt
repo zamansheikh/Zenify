@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
@@ -50,6 +51,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -189,49 +192,67 @@ fun HomeScreen(
             }
         },
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = state.loading,
-            onRefresh = onRefresh,
+        val listState = rememberLazyListState()
+        val focusRequester = remember { FocusRequester() }
+
+        // Opening search: jump to top and focus the field so it's always visible
+        // (it's a pinned header, not a list item that scrolls away).
+        LaunchedEffect(searching) {
+            if (searching) {
+                listState.scrollToItem(0)
+                runCatching { focusRequester.requestFocus() }
+            }
+        }
+
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 110.dp),
+            if (searching && !selecting) {
+                OutlinedTextField(
+                    value = state.query,
+                    onValueChange = onQueryChange,
+                    placeholder = { Text("Search apps") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .focusRequester(focusRequester),
+                    singleLine = true,
+                )
+            }
+
+            PullToRefreshBox(
+                isRefreshing = state.loading,
+                onRefresh = onRefresh,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
             ) {
-                if (!state.usageAccessGranted && !selecting) {
-                    item {
-                        StatusBanner(
-                            icon = Icons.Filled.Bolt,
-                            title = "Grant usage access",
-                            subtitle = "Zenify needs this to detect which apps are awake.",
-                            actionable = true,
-                            onClick = {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                )
-                            },
-                        )
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 110.dp),
+                ) {
+                    if (!state.usageAccessGranted && !selecting) {
+                        item {
+                            StatusBanner(
+                                icon = Icons.Filled.Bolt,
+                                title = "Grant usage access",
+                                subtitle = "Zenify needs this to detect which apps are awake.",
+                                actionable = true,
+                                onClick = {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                },
+                            )
+                        }
                     }
-                }
 
-                if (searching && !selecting) {
-                    item {
-                        OutlinedTextField(
-                            value = state.query,
-                            onValueChange = onQueryChange,
-                            placeholder = { Text("Search apps") },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 8.dp),
-                            singleLine = true,
-                        )
-                    }
-                }
-
-                groupCard(
+                    groupCard(
                     title = "RUNNING NOW · ${state.running.size}",
                     hint = if (!selecting) "long-press to select" else null,
                     apps = state.running,
@@ -250,9 +271,10 @@ fun HomeScreen(
                     row = row,
                 )
 
-                if (state.others.isNotEmpty()) {
-                    item { SectionLabel("ALL APPS · TAP TO MANAGE", null) }
-                    items(state.others, key = { "o_${it.packageName}" }) { row(it) }
+                    if (state.others.isNotEmpty()) {
+                        item { SectionLabel("ALL APPS · TAP TO MANAGE", null) }
+                        items(state.others, key = { "o_${it.packageName}" }) { row(it) }
+                    }
                 }
             }
         }

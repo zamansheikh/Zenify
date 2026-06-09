@@ -47,6 +47,11 @@ class AppRepository(private val context: Context) {
         // Foreground/background state machine markers.
         const val STATE_FG = 1
         const val STATE_BG = 0
+
+        // UsageEvents.Event.FOREGROUND_SERVICE_START / _STOP (API 29+). Used as
+        // literals so they compile on minSdk 26 (they simply never fire there).
+        const val EVENT_FGS_START = 19
+        const val EVENT_FGS_STOP = 20
     }
 
     fun hasUsageAccess(): Boolean {
@@ -70,7 +75,7 @@ class AppRepository(private val context: Context) {
     ): List<AppInfo> = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         val lastUsedMap = lastUsedByPackage(now)
-        val (fgActive, fgTop) = foregroundActivity(now)
+        val fallbackStates = fallbackRunningStates(now)
         val self = context.packageName
 
         val launchable = launchablePackages()
@@ -88,7 +93,7 @@ class AppRepository(private val context: Context) {
 
                 val pkg = ai.packageName
                 val lastUsed = lastUsedMap[pkg] ?: 0L
-                val state = classify(pkg, lastUsed, importance, fgActive, fgTop)
+                val state = classify(pkg, lastUsed, importance, fallbackStates)
                 val reason = riskReasons[pkg]
                 val isIme = reason == "Active keyboard"
                 AppInfo(
@@ -118,8 +123,7 @@ class AppRepository(private val context: Context) {
         pkg: String,
         lastUsed: Long,
         importance: Map<String, Int>,
-        fgActive: Set<String>,
-        fgTop: String?,
+        fallbackStates: Map<String, RunState>,
     ): RunState {
         // We just force-stopped it — trust that over stale usage/importance data.
         if (HibernationTracker.isHibernated(pkg, lastUsed)) return RunState.STOPPED
@@ -135,15 +139,8 @@ class AppRepository(private val context: Context) {
             }
         }
 
-        // Fallback (no Shizuku): only trust the foreground event stream. An app
-        // is "running" only if its latest event was move-to-foreground with no
-        // later move-to-background — this ignores the background usage blips
-        // (sync, notifications) that make a stale "last used" time lie.
-        return when {
-            pkg == fgTop -> RunState.FOREGROUND
-            pkg in fgActive -> RunState.WORKING
-            else -> RunState.STOPPED
-        }
+        // Fallback (no Shizuku): derived from the usage-event stream.
+        return fallbackStates[pkg] ?: RunState.STOPPED
     }
 
     private fun detailFor(state: RunState, isIme: Boolean, managed: Boolean, lastUsed: Long): String {
@@ -219,20 +216,25 @@ class AppRepository(private val context: Context) {
     }
 
     /**
-     * Replays usage events to find recently-running apps. We key off actual
-     * MOVE_TO_FOREGROUND events (when the app was really opened) rather than the
-     * "last used" timestamp, which background sync/notifications bump and which
-     * therefore produced false positives. An app foregrounded within the window
-     * is treated as still running (its process usually lingers), even once it's
-     * been backgrounded — so the app you just opened still shows up.
+     * Best-effort running-app detection without Shizuku, from the usage-event
+     * stream. We combine three signals so persistent apps aren't missed:
      *
-     * @return (recently-foregrounded packages, the app currently in foreground).
+     *  - MOVE_TO_FOREGROUND  → the app was actually opened (recently = likely
+     *    still alive). Keyed off real events, not the blip-prone "last used".
+     *  - FOREGROUND_SERVICE_START/STOP → apps running a foreground service
+     *    (persistent notification) like Internet Speed Meter or music players,
+     *    which never come to the foreground as an activity.
+     *  - the single app still in the foreground state → "in use right now".
+     *
+     * Purely-background processes (no service, not opened recently) remain
+     * invisible — that genuinely requires Shizuku.
      */
-    private fun foregroundActivity(now: Long): Pair<Set<String>, String?> {
+    private fun fallbackRunningStates(now: Long): Map<String, RunState> {
         val events = usm.queryEvents(now - 6 * 60 * 60 * 1000, now)
         val e = UsageEvents.Event()
         val lastFgTime = HashMap<String, Long>()
-        val lastState = HashMap<String, Int>()   // pkg -> FG/BG
+        val lastState = HashMap<String, Int>()         // pkg -> FG/BG (activity)
+        val fgServiceActive = HashMap<String, Int>()    // pkg -> service started count state
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
             when (e.eventType) {
@@ -243,17 +245,26 @@ class AppRepository(private val context: Context) {
                 UsageEvents.Event.MOVE_TO_BACKGROUND -> {
                     lastState[e.packageName] = STATE_BG
                 }
+                EVENT_FGS_START -> fgServiceActive[e.packageName] = STATE_FG
+                EVENT_FGS_STOP -> fgServiceActive[e.packageName] = STATE_BG
             }
         }
-        // Recently opened → likely still alive in the background.
-        val active = lastFgTime
-            .filter { (now - it.value) <= activeWindowMs }
-            .keys
-        // The single app still in the foreground state (most recent).
-        val top = lastState.entries
+
+        val states = HashMap<String, RunState>()
+        // Recently opened activity → likely still alive in the background.
+        lastFgTime.forEach { (pkg, t) ->
+            if (now - t <= activeWindowMs) states[pkg] = RunState.WORKING
+        }
+        // Active foreground service → running as foreground (stronger signal).
+        fgServiceActive.forEach { (pkg, state) ->
+            if (state == STATE_FG) states[pkg] = RunState.FOREGROUND_SERVICE
+        }
+        // The single app still in the foreground state → in use right now.
+        lastState.entries
             .filter { it.value == STATE_FG }
             .maxByOrNull { lastFgTime[it.key] ?: 0L }
-            ?.key
-        return active to top
+            ?.let { states[it.key] = RunState.FOREGROUND }
+
+        return states
     }
 }
