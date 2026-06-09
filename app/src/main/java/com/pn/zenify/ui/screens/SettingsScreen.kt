@@ -37,6 +37,7 @@ fun SettingsScreen(
     onDelayChange: (Int) -> Unit,
     onToggleShowSystem: (Boolean) -> Unit,
     onToggleScreenOff: (Boolean) -> Unit,
+    onOpenExcluded: () -> Unit,
     onOpenEngineSetup: () -> Unit,
 ) {
     Scaffold(
@@ -93,6 +94,26 @@ fun SettingsScreen(
                 checked = state.showSystem,
                 onChange = onToggleShowSystem,
             )
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onOpenExcluded)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Excluded apps", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        if (state.excludedCount == 0)
+                            "None yet — excluded apps are hidden from the list and never force-stopped."
+                        else "${state.excludedCount} app(s) hidden and never force-stopped.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null)
+            }
 
             Divider()
             SectionTitle("Engine")

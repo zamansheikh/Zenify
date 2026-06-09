@@ -11,11 +11,12 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pn.zenify.ui.screens.EngineSetupScreen
+import com.pn.zenify.ui.screens.ExcludedAppsScreen
 import com.pn.zenify.ui.screens.HomeScreen
 import com.pn.zenify.ui.screens.SettingsScreen
 import com.pn.zenify.ui.theme.ZenifyTheme
 
-private enum class Screen { HOME, SETTINGS, ENGINE }
+private enum class Screen { HOME, SETTINGS, ENGINE, EXCLUDED }
 
 class MainActivity : ComponentActivity() {
 
@@ -50,7 +51,9 @@ class MainActivity : ComponentActivity() {
                         onRefresh = viewModel::refresh,
                         onEnterSelection = viewModel::enterSelection,
                         onToggleSelect = viewModel::toggleSelect,
-                        onSelectAll = viewModel::selectAllRunning,
+                        onSelectFilter = viewModel::selectByFilter,
+                        onExcludeSelected = viewModel::excludeSelected,
+                        onRemoveFromHibernated = viewModel::removeFromHibernated,
                         onExitSelection = viewModel::exitSelection,
                         onToggleManaged = viewModel::toggleManaged,
                         onToggleWhitelist = viewModel::toggleWhitelist,
@@ -66,6 +69,7 @@ class MainActivity : ComponentActivity() {
                         onDelayChange = viewModel::setDelayMinutes,
                         onToggleShowSystem = viewModel::setShowSystem,
                         onToggleScreenOff = viewModel::setHibernateOnScreenOff,
+                        onOpenExcluded = { navigate(Screen.EXCLUDED) },
                         onOpenEngineSetup = { navigate(Screen.ENGINE) },
                     )
 
@@ -73,6 +77,12 @@ class MainActivity : ComponentActivity() {
                         state = state,
                         onBack = { pop() },
                         onRequestShizuku = viewModel::requestShizuku,
+                    )
+
+                    Screen.EXCLUDED -> ExcludedAppsScreen(
+                        state = state,
+                        onBack = { pop() },
+                        onIncludeApp = viewModel::toggleWhitelist,
                     )
                 }
             }

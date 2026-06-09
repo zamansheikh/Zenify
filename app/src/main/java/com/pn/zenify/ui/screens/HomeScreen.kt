@@ -17,17 +17,21 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -57,6 +61,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pn.zenify.data.AppInfo
+import com.pn.zenify.ui.SelectFilter
 import com.pn.zenify.ui.UiEvent
 import com.pn.zenify.ui.UiState
 import com.pn.zenify.ui.components.AppRow
@@ -75,7 +80,9 @@ fun HomeScreen(
     onRefresh: () -> Unit,
     onEnterSelection: (AppInfo) -> Unit,
     onToggleSelect: (AppInfo) -> Unit,
-    onSelectAll: () -> Unit,
+    onSelectFilter: (SelectFilter) -> Unit,
+    onExcludeSelected: () -> Unit,
+    onRemoveFromHibernated: () -> Unit,
     onExitSelection: () -> Unit,
     onToggleManaged: (AppInfo) -> Unit,
     onToggleWhitelist: (AppInfo) -> Unit,
@@ -85,6 +92,7 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     var searching by remember { mutableStateOf(false) }
+    var filterMenu by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -144,8 +152,37 @@ fun HomeScreen(
                 },
                 actions = {
                     if (selecting) {
-                        IconButton(onClick = onSelectAll) {
-                            Icon(Icons.Filled.DoneAll, contentDescription = "Select all running")
+                        val hasSelection = state.selectionCount > 0
+                        // Remove the selection from the hibernation list.
+                        IconButton(onClick = onRemoveFromHibernated, enabled = hasSelection) {
+                            Icon(
+                                Icons.Outlined.Bedtime,
+                                contentDescription = "Remove from hibernated",
+                            )
+                        }
+                        // Exclude the selection (never hibernate).
+                        IconButton(onClick = onExcludeSelected, enabled = hasSelection) {
+                            Icon(Icons.Filled.Block, contentDescription = "Exclude selected")
+                        }
+                        // Bulk "select by category" menu.
+                        Box {
+                            IconButton(onClick = { filterMenu = true }) {
+                                Icon(Icons.Filled.FilterList, contentDescription = "Select by category")
+                            }
+                            DropdownMenu(
+                                expanded = filterMenu,
+                                onDismissRequest = { filterMenu = false },
+                            ) {
+                                SelectFilter.entries.forEach { f ->
+                                    DropdownMenuItem(
+                                        text = { Text("Select ${f.label.lowercase()}") },
+                                        onClick = {
+                                            filterMenu = false
+                                            onSelectFilter(f)
+                                        },
+                                    )
+                                }
+                            }
                         }
                     } else {
                         IconButton(onClick = { searching = !searching }) {

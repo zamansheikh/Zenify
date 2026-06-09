@@ -41,9 +41,19 @@ data class UiState(
     val hibernateOnScreenOff: Boolean = true,
     val hibernatingNow: Boolean = false,
 ) {
-    private val filtered: List<AppInfo>
-        get() = if (query.isBlank()) apps
-        else apps.filter { it.label.contains(query, ignoreCase = true) }
+    /**
+     * Apps shown on the home screen: excluded (whitelisted) apps are hidden
+     * here entirely — they live in the Settings exclude list instead — and the
+     * search query is applied.
+     */
+    val filtered: List<AppInfo>
+        get() = apps.filter {
+            !it.whitelisted && (query.isBlank() || it.label.contains(query, ignoreCase = true))
+        }
+
+    /** Excluded (never-hibernate) apps, surfaced only in Settings. */
+    val excluded: List<AppInfo>
+        get() = apps.filter { it.whitelisted }
 
     /** Actively running apps — grouped first, most-important on top. */
     val running: List<AppInfo>
@@ -64,6 +74,7 @@ data class UiState(
 
     val selectionCount: Int get() = selection.size
     val hasEngine: Boolean get() = engineMethod != HibernationEngine.Method.NONE
+    val excludedCount: Int get() = apps.count { it.whitelisted }
 
     /** Top-bar summary line. */
     val summary: String
@@ -75,6 +86,15 @@ data class UiState(
 sealed interface UiEvent {
     data class Message(val text: String) : UiEvent
     data object OpenEngineSetup : UiEvent
+}
+
+/** Quick "select all of a kind" options offered in selection mode. */
+enum class SelectFilter(val label: String) {
+    ALL("All apps"),
+    ACTIVE("Running now"),
+    CACHED("Cached"),
+    HIBERNATED("Hibernated"),
+    IDLE("Idle / unmanaged"),
 }
 
 class MainViewModel(app: Application) : AndroidViewModel(app) {
@@ -144,12 +164,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val whitelist = zen.prefs.whitelist.first()
             val showSystem = zen.prefs.showSystem.first()
             val apps = zen.repository.loadApps(managed, whitelist, showSystem)
-            // Drop selections for apps that are no longer running.
-            val stillRunning = apps.filter { it.isActive }.map { it.packageName }.toSet()
+            // Keep selections for any still-installed app (selection can span
+            // all sections now, not just running).
+            val installed = apps.map { it.packageName }.toSet()
             _state.value = _state.value.copy(
                 loading = false,
                 apps = apps,
-                selection = _state.value.selection intersect stillRunning,
+                selection = _state.value.selection intersect installed,
             )
         }
     }
@@ -173,10 +194,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(selection = current)
     }
 
-    fun selectAllRunning() {
-        _state.value = _state.value.copy(
+    /** Select every app currently visible (respects the search filter). */
+    fun selectAll() = selectByFilter(SelectFilter.ALL)
+
+    /** Bulk-select every app in a category (active, cached, hibernated, …). */
+    fun selectByFilter(filter: SelectFilter) {
+        val s = _state.value
+        val matches = when (filter) {
+            SelectFilter.ALL -> s.filtered
+            SelectFilter.ACTIVE -> s.running
+            SelectFilter.CACHED -> s.cached
+            SelectFilter.HIBERNATED -> s.hibernated
+            SelectFilter.IDLE -> s.others
+        }
+        _state.value = s.copy(
             selectionMode = true,
-            selection = _state.value.running.map { it.packageName }.toSet(),
+            selection = matches.map { it.packageName }.toSet(),
         )
     }
 
@@ -184,7 +217,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _state.value = _state.value.copy(selectionMode = false, selection = emptySet())
     }
 
-    // ---- Manage / whitelist ----
+    /** Add the current selection to the exclude list (never force-stopped). */
+    fun excludeSelected() {
+        val pkgs = _state.value.selection
+        if (pkgs.isEmpty()) return
+        viewModelScope.launch {
+            pkgs.forEach { zen.prefs.setWhitelisted(it, true) }
+            _state.value = _state.value.copy(selectionMode = false, selection = emptySet())
+            _events.tryEmit(UiEvent.Message("Added ${pkgs.size} app(s) to the exclude list."))
+            refresh()
+        }
+    }
+
+    /**
+     * Remove the current selection from the hibernation (managed) list. The
+     * apps stay installed and asleep — they just leave the Hibernated section
+     * and Zenify stops managing them.
+     */
+    fun removeFromHibernated() {
+        val pkgs = _state.value.selection
+        if (pkgs.isEmpty()) return
+        viewModelScope.launch {
+            pkgs.forEach { zen.prefs.setManaged(it, false) }
+            _state.value = _state.value.copy(selectionMode = false, selection = emptySet())
+            _events.tryEmit(UiEvent.Message("Removed ${pkgs.size} app(s) from the hibernation list."))
+            refresh()
+        }
+    }
+
+    // ---- Manage / exclude ----
     fun toggleManaged(app: AppInfo) {
         viewModelScope.launch {
             zen.prefs.setManaged(app.packageName, !app.managed)
@@ -192,6 +253,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Toggle an app's exclude (never-hibernate) status. */
     fun toggleWhitelist(app: AppInfo) {
         viewModelScope.launch {
             zen.prefs.setWhitelisted(app.packageName, !app.whitelisted)
@@ -234,7 +296,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val s = _state.value
             val explicit = s.selectionMode && s.selection.isNotEmpty()
             val targets = if (explicit) {
-                s.apps.filter { it.packageName in s.selection }
+                // Explicit selection overrides the "risky" auto-skip, but the
+                // user's exclude list is always respected.
+                s.apps.filter { it.packageName in s.selection && !it.whitelisted }
             } else {
                 s.running.filter { !it.whitelisted && !it.risky }
             }.map { it.packageName }
@@ -249,6 +313,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 return@launch
             }
+
+            // An explicit selection is a request to manage these apps, so mark
+            // them managed up front — that way they land in the Hibernated
+            // section once stopped, even if some are already idle.
+            if (explicit) targets.forEach { zen.prefs.setManaged(it, true) }
 
             // Apps the OS won't let us force-stop — so the accessibility engine
             // skips them honestly instead of marking them stopped.

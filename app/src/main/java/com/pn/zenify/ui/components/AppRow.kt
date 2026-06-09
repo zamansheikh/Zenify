@@ -75,12 +75,15 @@ fun AppRow(
             }
         },
         trailingContent = {
-            if (app.managed) {
+            // Lock = excluded (never force-stopped); moon = managed for
+            // hibernation. Tapping toggles the exclude state.
+            if (app.whitelisted || app.managed) {
                 IconButton(onClick = onToggleWhitelist) {
                     Icon(
                         imageVector = if (app.whitelisted) Icons.Filled.Lock
                         else Icons.Outlined.Bedtime,
-                        contentDescription = if (app.whitelisted) "Whitelisted" else "Hibernates",
+                        contentDescription = if (app.whitelisted) "Excluded — tap to include"
+                        else "Managed — tap to exclude",
                         tint = if (app.whitelisted) MaterialTheme.colorScheme.error
                         else MaterialTheme.colorScheme.primary,
                     )

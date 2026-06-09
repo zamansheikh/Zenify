@@ -34,8 +34,20 @@ object ForceStopController {
         val currentPackage: String? = null,
     )
 
-    /** Per-package budget before we give up and move on. */
-    private const val STEP_TIMEOUT_MS = 4000L
+    /** Per-attempt budget before we re-open or give up on a package. */
+    private const val STEP_TIMEOUT_MS = 4500L
+
+    /**
+     * Pause between finishing one package and opening the next. Force-stopping
+     * is a chain of system-screen transitions and dialog dismissals; launching
+     * the next App-info screen the instant we tap "OK" floods slower devices and
+     * makes screens fail to load. This gap lets the system settle so the run is
+     * smooth and reliable instead of fast-but-flaky.
+     */
+    private const val SETTLE_MS = 450L
+
+    /** How many times to (re)open a package's App-info page before skipping. */
+    private const val MAX_OPEN_ATTEMPTS = 2
 
     private val _progress = MutableStateFlow(Progress())
     val progress: StateFlow<Progress> = _progress
@@ -43,6 +55,9 @@ object ForceStopController {
     private val handler = Handler(Looper.getMainLooper())
     private val queue = ArrayDeque<String>()
     private val protectedPkgs = HashSet<String>()
+
+    /** Open attempts spent on the package currently being handled. */
+    private var openAttempts = 0
 
     @Volatile var currentPackage: String? = null
         private set
@@ -90,7 +105,15 @@ object ForceStopController {
             }
         }
         currentPackage = null
-        advance()
+        // Let the dialog dismiss and the system settle before the next package
+        // so rapid back-to-back force-stops don't overwhelm the device.
+        scheduleAdvance()
+    }
+
+    /** Move to the next package after a short settle gap. */
+    private fun scheduleAdvance() {
+        handler.removeCallbacksAndMessages(null)
+        handler.postDelayed({ advance() }, SETTLE_MS)
     }
 
     @Synchronized
@@ -102,23 +125,39 @@ object ForceStopController {
             return
         }
         currentPackage = next
+        openAttempts = 0
+        openCurrent()
+    }
+
+    /** (Re)open the App-info page for [currentPackage] and arm the watchdog. */
+    @Synchronized
+    private fun openCurrent() {
+        val pkg = currentPackage ?: return
+        openAttempts++
         phase = Phase.INFO
         generation++
         val gen = generation
-        _progress.value = Progress(true, total, done, skipped, next)
-        openAppInfo(next)
+        _progress.value = Progress(true, total, done, skipped, pkg)
+        openAppInfo(pkg)
         // Watchdog: if the service hasn't resolved this package in time (e.g. a
-        // disabled button that emits no events), skip it and move on.
+        // screen that never loaded, or a disabled button that emits no events),
+        // retry the page or skip — guaranteeing the queue always advances.
         handler.postDelayed({ onTimeout(gen) }, STEP_TIMEOUT_MS)
     }
 
     @Synchronized
     private fun onTimeout(gen: Int) {
         if (gen != generation || currentPackage == null) return
+        // The screen may not have loaded under load — give it another open
+        // before deciding the package can't be handled.
+        if (openAttempts < MAX_OPEN_ATTEMPTS) {
+            openCurrent()
+            return
+        }
         // Couldn't act in time — count as skipped and continue.
         skipped++
         currentPackage = null
-        advance()
+        scheduleAdvance()
     }
 
     private fun finish() {
