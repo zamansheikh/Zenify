@@ -13,12 +13,28 @@ object HibernationTracker {
 
     private val hibernatedAt = ConcurrentHashMap<String, Long>()
 
+    /** Called with a fresh snapshot whenever the map changes, so it can persist. */
+    @Volatile private var onChanged: ((Map<String, Long>) -> Unit)? = null
+
+    /**
+     * Seed from persisted state and register a sink that re-persists on every
+     * change. Without this the map is process-local and an app update wipes it —
+     * making just-hibernated apps look "running" again on next launch.
+     */
+    fun bind(initial: Map<String, Long>, onChanged: (Map<String, Long>) -> Unit) {
+        hibernatedAt.putAll(initial)
+        this.onChanged = onChanged
+    }
+
     fun mark(pkg: String, now: Long = System.currentTimeMillis()) {
         hibernatedAt[pkg] = now
+        persist()
     }
 
     fun markAll(pkgs: Collection<String>, now: Long = System.currentTimeMillis()) {
+        if (pkgs.isEmpty()) return
         pkgs.forEach { hibernatedAt[it] = now }
+        persist()
     }
 
     /**
@@ -30,8 +46,13 @@ object HibernationTracker {
         val t = hibernatedAt[pkg] ?: return false
         if (lastUsed > t) {
             hibernatedAt.remove(pkg)
+            persist()
             return false
         }
         return true
+    }
+
+    private fun persist() {
+        onChanged?.invoke(HashMap(hibernatedAt))
     }
 }

@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "zen_prefs")
@@ -26,6 +27,9 @@ class ZenPrefs(private val context: Context) {
         val DELAY_MINUTES = intPreferencesKey("hibernate_delay_minutes")
         val HIBERNATE_ON_SCREEN_OFF = booleanPreferencesKey("hibernate_on_screen_off")
         val SHOW_SYSTEM = booleanPreferencesKey("show_system_apps")
+        // "pkg=epochMillis" entries — when we last hibernated each package, so the
+        // run-state heuristic survives app updates / process restarts.
+        val HIBERNATED = stringSetPreferencesKey("hibernated_at")
     }
 
     val managed: Flow<Set<String>> = context.dataStore.data.map { it[Keys.MANAGED] ?: emptySet() }
@@ -50,6 +54,23 @@ class ZenPrefs(private val context: Context) {
 
     suspend fun setShowSystem(on: Boolean) =
         context.dataStore.edit { it[Keys.SHOW_SYSTEM] = on }
+
+    /** Load the persisted package→hibernation-time map. */
+    suspend fun loadHibernated(): Map<String, Long> {
+        val set = context.dataStore.data.map { it[Keys.HIBERNATED] ?: emptySet() }.first()
+        return set.mapNotNull { entry ->
+            val i = entry.lastIndexOf('=')
+            if (i <= 0) return@mapNotNull null
+            val ts = entry.substring(i + 1).toLongOrNull() ?: return@mapNotNull null
+            entry.substring(0, i) to ts
+        }.toMap()
+    }
+
+    /** Persist the package→hibernation-time map (overwrites). */
+    suspend fun saveHibernated(map: Map<String, Long>) {
+        val set = map.entries.map { "${it.key}=${it.value}" }.toSet()
+        context.dataStore.edit { it[Keys.HIBERNATED] = set }
+    }
 
     private suspend fun toggle(key: Preferences.Key<Set<String>>, pkg: String, on: Boolean) {
         context.dataStore.edit { prefs ->
