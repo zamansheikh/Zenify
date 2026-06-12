@@ -76,10 +76,18 @@ data class UiState(
     val hasEngine: Boolean get() = engineMethod != HibernationEngine.Method.NONE
     val excludedCount: Int get() = apps.count { it.whitelisted }
 
-    /** Top-bar summary line. */
+    /**
+     * Top-bar summary line. Counts only the apps actually shown on the home
+     * screen (excluded apps are hidden), so the header never reports an "active"
+     * app that has no row in the list.
+     */
     val summary: String
-        get() = "${apps.count { it.isActive }} active · ${apps.count { it.isCached }} cached · " +
-            "${apps.count { it.runState == RunState.STOPPED }} asleep"
+        get() {
+            val visible = apps.filter { !it.whitelisted }
+            return "${visible.count { it.isActive }} active · " +
+                "${visible.count { it.isCached }} cached · " +
+                "${visible.count { it.runState == RunState.STOPPED }} asleep"
+        }
 }
 
 /** One-shot messages for the UI (snackbars). */
@@ -313,11 +321,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 )
                 return@launch
             }
-
-            // An explicit selection is a request to manage these apps, so mark
-            // them managed up front — that way they land in the Hibernated
-            // section once stopped, even if some are already idle.
-            if (explicit) targets.forEach { zen.prefs.setManaged(it, true) }
 
             // Apps the OS won't let us force-stop — so the accessibility engine
             // skips them honestly instead of marking them stopped.

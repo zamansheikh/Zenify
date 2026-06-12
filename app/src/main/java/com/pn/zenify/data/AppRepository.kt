@@ -125,9 +125,11 @@ class AppRepository(private val context: Context) {
         importance: Map<String, Int>,
         fallbackStates: Map<String, RunState>,
     ): RunState {
-        // We just force-stopped it — trust that over stale usage/importance data.
-        if (HibernationTracker.isHibernated(pkg, lastUsed)) return RunState.STOPPED
-
+        // Live process importance (via Shizuku) is ground truth — it already
+        // reflects a real force-stop (the process is gone) and, crucially, still
+        // shows an app we FAILED to stop as running. So it must win over our
+        // optimistic hibernation record, or a missed app would falsely read as
+        // stopped.
         if (importance.isNotEmpty()) {
             val imp = importance[pkg] ?: return RunState.STOPPED
             return when {
@@ -138,6 +140,12 @@ class AppRepository(private val context: Context) {
                 else -> RunState.STOPPED
             }
         }
+
+        // No live data (no Shizuku): force-stopping doesn't move lastTimeUsed,
+        // so the usage heuristic would keep showing a just-hibernated app as
+        // running. Mask that with our record until the app is actually used
+        // again (self-heals via lastUsed).
+        if (HibernationTracker.isHibernated(pkg, lastUsed)) return RunState.STOPPED
 
         // Fallback (no Shizuku): derived from the usage-event stream.
         return fallbackStates[pkg] ?: RunState.STOPPED

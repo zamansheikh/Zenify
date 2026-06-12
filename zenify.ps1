@@ -27,7 +27,12 @@ param(
     [string]$Command = "help",
 
     # Skip relaunch after install
-    [switch]$NoLaunch
+    [switch]$NoLaunch,
+
+    # Target a specific device (serial or partial match). When omitted and more
+    # than one device is connected, the script prompts for a choice.
+    [Alias("s")]
+    [string]$Device
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,18 +41,65 @@ $Gradlew = Join-Path $Root "gradlew.bat"
 $Activity = "com.pn.zenify.ui.MainActivity"
 $DebugId = "com.pn.zenify.debug"
 $ReleaseId = "com.pn.zenify"
+$script:Serial = $null
 
 function Info($msg)  { Write-Host "› $msg" -ForegroundColor Cyan }
 function Ok($msg)    { Write-Host "✓ $msg" -ForegroundColor Green }
 function Warn($msg)  { Write-Host "! $msg" -ForegroundColor Yellow }
 function Fail($msg)  { Write-Host "✗ $msg" -ForegroundColor Red }
 
+function Get-Devices {
+    # Serials of all fully-online devices (skips 'offline'/'unauthorized').
+    $devs = @()
+    foreach ($line in (& adb devices)) {
+        if ($line -match '^(\S+)\s+device\s*$') { $devs += $Matches[1] }
+    }
+    return $devs
+}
+
+function Get-DeviceLabel($serial) {
+    $model = (& adb -s $serial shell getprop ro.product.model 2>$null)
+    if ($model) { "$serial ($($model.ToString().Trim()))" } else { $serial }
+}
+
+# Pick exactly one target device and pin it for every adb + Gradle call via the
+# ANDROID_SERIAL env var (both adb and the Android Gradle Plugin honor it). This
+# is what stops 'am start' from failing with "more than one device/emulator".
 function Require-Device {
-    $devices = (& adb devices) | Select-String "`tdevice$"
-    if (-not $devices) {
+    if ($script:Serial) { return }
+
+    $devices = @(Get-Devices)
+    if ($devices.Count -eq 0) {
         Fail "No device/emulator connected (check 'adb devices')."
         exit 1
     }
+
+    $preferred = if ($Device) { $Device } elseif ($env:ANDROID_SERIAL) { $env:ANDROID_SERIAL } else { $null }
+    if ($preferred) {
+        $match = $devices | Where-Object { $_ -eq $preferred -or $_ -like "*$preferred*" } | Select-Object -First 1
+        if (-not $match) { Fail "No connected device matches '$preferred'. Connected: $($devices -join ', ')"; exit 1 }
+        $script:Serial = $match
+    }
+    elseif ($devices.Count -eq 1) {
+        $script:Serial = $devices[0]
+    }
+    else {
+        Warn "Multiple devices connected:"
+        for ($i = 0; $i -lt $devices.Count; $i++) {
+            Write-Host ("  [{0}] {1}" -f ($i + 1), (Get-DeviceLabel $devices[$i]))
+        }
+        $choice = Read-Host "Select device number (1-$($devices.Count)), or Enter for [1]"
+        if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "1" }
+        $idx = 0
+        if (-not ([int]::TryParse($choice, [ref]$idx)) -or $idx -lt 1 -or $idx -gt $devices.Count) {
+            Fail "Invalid selection."
+            exit 1
+        }
+        $script:Serial = $devices[$idx - 1]
+    }
+
+    $env:ANDROID_SERIAL = $script:Serial
+    Ok "Using device: $(Get-DeviceLabel $script:Serial)"
 }
 
 function Gradle($task) {
@@ -146,7 +198,10 @@ function Show-Help {
     Write-Host "  uninstall       remove debug & release builds"
     Write-Host "  help            this message"
     Write-Host ""
-    Write-Host "Flags:  -NoLaunch   (don't relaunch after install)"
+    Write-Host "Flags:  -NoLaunch          (don't relaunch after install)"
+    Write-Host "        -Device <serial>   (target a device; serial or partial match)"
+    Write-Host ""
+    Write-Host "With multiple devices connected and no -Device, you'll be prompted to pick one."
     Write-Host ""
 }
 
