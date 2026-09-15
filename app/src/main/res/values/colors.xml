@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="zen_background">#FFF7FBF4</color>
-    <color name="zen_brand">#2E7D52</color>
-    <color name="ic_launcher_background">#1B5E3A</color>
+    <color name="zen_background">#FFF6FBF5</color>
+    <color name="zen_brand">#1F6B47</color>
+    <color name="ic_launcher_background">#1F6B47</color>
 </resources>

@@ -15,8 +15,10 @@ interface IUserService {
     // error string on failure.
     String forceStop(String packageName) = 3;
 
-    // Newline-separated "package=importance" pairs for every running process,
-    // using ActivityManager.RunningAppProcessInfo importance values. Lets the
-    // app label apps like Greenify (working / cached / foreground / etc.).
+    // Newline-separated live process table using
+    // ActivityManager.RunningAppProcessInfo importance values. Lines are
+    // "package=importance" (from ActivityManager), or "uid:N=importance" and
+    // "proc:name=importance" (from dumpsys / ps fallbacks). An "error: ..."
+    // string means no source worked. Lets the app label apps like Greenify.
     String dumpProcesses() = 4;
 }

@@ -5,7 +5,8 @@ import android.graphics.drawable.Drawable
 /**
  * Process state, mirroring the granularity Greenify shows. With Shizuku we know
  * the real [android.app.ActivityManager] importance; without it we collapse to
- * FOREGROUND / WORKING / STOPPED from usage stats.
+ * FOREGROUND / FOREGROUND_SERVICE / WORKING / STOPPED from the OS usage-event
+ * stream plus the package's force-stopped flag.
  */
 enum class RunState {
     /** Top / visible to the user right now. */
@@ -38,6 +39,12 @@ data class AppInfo(
     val risky: Boolean = false,
     /** Short reason shown to the user when [risky]. */
     val riskReason: String? = null,
+    /**
+     * The OS's own force-stopped state ([android.content.pm.ApplicationInfo.FLAG_STOPPED]):
+     * exactly what greys out "Force stop" in Settings. True until the app is
+     * launched again.
+     */
+    val stopped: Boolean = false,
 ) {
     /** Actively running (worth hibernating). Cached apps are NOT active. */
     val isActive: Boolean

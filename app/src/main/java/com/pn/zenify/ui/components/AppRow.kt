@@ -3,9 +3,12 @@ package com.pn.zenify.ui.components
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.WarningAmber
@@ -22,10 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.pn.zenify.data.AppInfo
 
+/**
+ * One app in any list: icon, name, live status chip, and a trailing lock
+ * (excluded) or moon (managed) toggle. In selection mode a checkbox leads the
+ * row and the whole row toggles.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppRow(
@@ -37,7 +46,8 @@ fun AppRow(
     selected: Boolean = false,
     onLongClick: (() -> Unit)? = null,
 ) {
-    val container = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val scheme = MaterialTheme.colorScheme
+    val container = if (selected) scheme.primaryContainer.copy(alpha = 0.6f) else Color.Transparent
     ListItem(
         modifier = modifier
             .background(container)
@@ -47,28 +57,31 @@ fun AppRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (selectionMode) {
                     Checkbox(checked = selected, onCheckedChange = { onClick() })
+                    Spacer(Modifier.width(4.dp))
                 }
                 AsyncImage(
                     model = app.icon,
                     contentDescription = null,
                     modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape),
+                        .size(42.dp)
+                        .clip(RoundedCornerShape(12.dp)),
                 )
             }
         },
-        headlineContent = { Text(app.label) },
+        headlineContent = {
+            Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
         supportingContent = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 StatusPill(state = app.runState, text = app.detail)
                 if (app.risky) {
                     Icon(
                         imageVector = Icons.Filled.WarningAmber,
-                        contentDescription = "Risky to force-stop",
-                        tint = MaterialTheme.colorScheme.tertiary,
+                        contentDescription = app.riskReason ?: "Risky to force-stop",
+                        tint = scheme.tertiary,
                         modifier = Modifier.size(16.dp),
                     )
                 }
@@ -84,8 +97,7 @@ fun AppRow(
                         else Icons.Outlined.Bedtime,
                         contentDescription = if (app.whitelisted) "Excluded — tap to include"
                         else "Managed — tap to exclude",
-                        tint = if (app.whitelisted) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.primary,
+                        tint = if (app.whitelisted) scheme.error else scheme.primary,
                     )
                 }
             }

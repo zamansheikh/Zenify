@@ -128,26 +128,21 @@ object ShizukuManager {
     }
 
     /**
-     * Live process importance per package (ActivityManager importance values).
-     * Empty when Shizuku isn't ready. Lets us label apps Greenify-style.
+     * Live process table (ActivityManager importance values) read by the shell
+     * uid. [ProcessSnapshot.available] is false when Shizuku isn't ready or the
+     * privileged service found no process source. Lets us label apps
+     * Greenify-style, exactly like Android's own "Running services" screen.
      */
-    suspend fun runningImportance(): Map<String, Int> {
-        val svc = ensureUserService() ?: return emptyMap()
+    suspend fun runningProcesses(): ProcessSnapshot {
+        val svc = ensureUserService() ?: return ProcessSnapshot.UNAVAILABLE
         return try {
             val dump = svc.dumpProcesses()
-            if (dump.isBlank() || dump.startsWith("error", ignoreCase = true)) return emptyMap()
-            dump.lineSequence()
-                .mapNotNull { line ->
-                    val idx = line.lastIndexOf('=')
-                    if (idx <= 0) return@mapNotNull null
-                    val pkg = line.substring(0, idx)
-                    val imp = line.substring(idx + 1).trim().toIntOrNull() ?: return@mapNotNull null
-                    pkg to imp
-                }
-                .toMap()
+            val snapshot = ProcessSnapshot.parse(dump)
+            if (!snapshot.available) Log.w(TAG, "dumpProcesses unavailable: ${dump.take(200)}")
+            snapshot
         } catch (t: Throwable) {
-            Log.w(TAG, "runningImportance failed", t)
-            emptyMap()
+            Log.w(TAG, "runningProcesses failed", t)
+            ProcessSnapshot.UNAVAILABLE
         }
     }
 

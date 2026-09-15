@@ -2,6 +2,8 @@ package com.pn.zenify.accessibility
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -119,14 +121,36 @@ object ForceStopController {
     @Synchronized
     private fun advance() {
         handler.removeCallbacksAndMessages(null)
-        val next = queue.removeFirstOrNull()
-        if (next == null) {
-            finish()
+        while (true) {
+            val next = queue.removeFirstOrNull()
+            if (next == null) {
+                finish()
+                return
+            }
+            // Already force-stopped per the OS: nothing to tap, so don't open
+            // Settings at all — count it and move straight on.
+            if (isStoppedByOs(next)) {
+                done++
+                HibernationTracker.mark(next)
+                continue
+            }
+            currentPackage = next
+            openAttempts = 0
+            openCurrent()
             return
         }
-        currentPackage = next
-        openAttempts = 0
-        openCurrent()
+    }
+
+    /** The OS's own force-stopped flag — the same state that greys out "Force stop". */
+    private fun isStoppedByOs(pkg: String): Boolean {
+        val pm = appContext?.packageManager ?: return false
+        return try {
+            (pm.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_STOPPED) != 0
+        } catch (e: PackageManager.NameNotFoundException) {
+            true
+        } catch (t: Throwable) {
+            false
+        }
     }
 
     /** (Re)open the App-info page for [currentPackage] and arm the watchdog. */
@@ -147,7 +171,19 @@ object ForceStopController {
 
     @Synchronized
     private fun onTimeout(gen: Int) {
-        if (gen != generation || currentPackage == null) return
+        val pkg = currentPackage
+        if (gen != generation || pkg == null) return
+        // Ask the OS (and the screen) before retrying: the stop may already have
+        // gone through without the service noticing — a ROM with no confirm
+        // dialog, or coalesced accessibility events. Re-opening App info for a
+        // package that is already stopped is exactly the "opens twice" bug.
+        val service = ForceStopService.instance
+        if (isStoppedByOs(pkg) ||
+            (phase == Phase.CONFIRM && service?.isForceStopButtonDisabled() == true)
+        ) {
+            onPackageHandled(success = true)
+            return
+        }
         // The screen may not have loaded under load — give it another open
         // before deciding the package can't be handled.
         if (openAttempts < MAX_OPEN_ATTEMPTS) {
@@ -181,7 +217,12 @@ object ForceStopController {
         val ctx = appContext ?: return
         val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
             .setData(Uri.fromParts("package", pkg, null))
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                    // Don't litter Recents with one Settings task per app.
+                    Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS
+            )
         runCatching { ctx.startActivity(intent) }
     }
 

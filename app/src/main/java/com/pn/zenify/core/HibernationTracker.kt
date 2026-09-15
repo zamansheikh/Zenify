@@ -3,11 +3,13 @@ package com.pn.zenify.core
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Force-stopping an app does NOT update its `UsageStats.lastTimeUsed`, so the
- * usage-based run-state heuristic would keep showing a just-hibernated app as
- * "running". This tracker remembers when we hibernated each package and treats
- * it as stopped until the app is actually used again (lastUsed moves past the
- * hibernation time).
+ * Safety net beneath the OS's own force-stopped flag. Force-stopping an app
+ * does NOT update its `UsageStats.lastTimeUsed`, so the usage-based run-state
+ * heuristic would keep showing a just-hibernated app as "running" in the brief
+ * window before the package flag is observed. This tracker remembers when we
+ * hibernated each package and treats it as stopped until the app is actually
+ * used again (lastUsed moves past the hibernation time) or a live process is
+ * seen for it.
  */
 object HibernationTracker {
 
@@ -35,6 +37,11 @@ object HibernationTracker {
         if (pkgs.isEmpty()) return
         pkgs.forEach { hibernatedAt[it] = now }
         persist()
+    }
+
+    /** Drop our record for [pkg] — e.g. a live process was seen, so it is not hibernated. */
+    fun forget(pkg: String) {
+        if (hibernatedAt.remove(pkg) != null) persist()
     }
 
     /**

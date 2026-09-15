@@ -16,14 +16,20 @@ draining your battery, holding RAM, and waking your device in the background.
     background auto-hibernation, and unlocks the rich process-state labels below.
   - **Accessibility** — no root, no PC. Zenify opens each app's *App info* screen and taps
     **Force stop → OK** for you, exactly like Greenify's non-root mode.
-- **Greenify-style live status labels** (with Shizuku): *In use*, *Running as foreground*,
-  *Working*, *Background-free (cached)*, *Being used by input method*, *Hibernated*.
+- **System-level running-app detection**, best source first: the live process table read by
+  the shell uid through Shizuku (what Android's own *Running services* screen shows), the OS's
+  force-stopped flag on each package (exactly what greys out *Force stop* in Settings — no
+  privileges needed), then Android's usage events (visible activities and foreground services
+  since boot).
+- **Greenify-style live status labels**: *In use*, *Running as foreground*, *Working*,
+  *Background-free (cached)*, *Being used by input method*, *Hibernated*, *Stopped*.
 - **Running apps grouped first** with **long-press multi-select** + select-all.
 - **Smart safety**: the default *Hibernate all* skips risky apps (active keyboard, launcher,
   accessibility services, device admins). You can still force them by selecting explicitly.
 - **Auto-hibernation**: a foreground watcher hibernates idle apps on a timer and the instant
   the screen turns off (Shizuku only). Re-arms after reboot.
-- **Pull-to-refresh**, search, per-app whitelist, light/dark + dynamic Material You theming.
+- **Pull-to-refresh**, search, per-app exclude list, one consistent green Material 3 palette
+  in light and dark (Material You dynamic colour is available as an opt-in in `ZenifyTheme`).
 
 ---
 
@@ -118,8 +124,14 @@ locally. For a real Play Store release, create a keystore and replace the `signi
 ## ⚠️ Notes & limits
 
 - Process-importance labels (cached / foreground-service / working) require **Shizuku** — they
-  rely on privileged `ActivityManager` data the OS hides from ordinary apps. Without it, Zenify
-  falls back to a usage-stats heuristic.
+  rely on privileged `ActivityManager` data the OS hides from ordinary apps. The privileged
+  service tries three sources in turn (`ActivityManager`, `dumpsys activity lru`, `ps`) so one
+  broken hidden-API path on an OEM ROM never blanks the feature. Without Shizuku, Zenify
+  combines the package force-stopped flag with usage events; purely-background processes that
+  never surface stay invisible, exactly as they are to every non-root app since Android 7.
+- The accessibility engine judges completion by the OS force-stopped flag, not by the screen,
+  so it never re-opens *App info* for an app that is already stopped, and skips apps that are
+  already stopped without opening Settings at all.
 - Hibernating (force-stopping) an app cancels its alarms/jobs until you next open it — that's the
   point. Don't hibernate apps you rely on for background delivery unless you accept delayed
   notifications.

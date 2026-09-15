@@ -2,22 +2,22 @@ package com.pn.zenify.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Accessibility
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -25,13 +25,16 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pn.zenify.core.AccessibilityUtil
@@ -53,6 +56,9 @@ fun EngineSetupScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Hibernation engine") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -73,38 +79,40 @@ fun EngineSetupScreen(
                     "required to browse, and you can switch any time.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp),
             )
-
-            // ---- Accessibility (no root, like Greenify) ----
-            EngineCard(
-                icon = Icons.Filled.Accessibility,
-                title = "Accessibility (no root)",
-                enabled = state.accessibilityEnabled,
-                body = "Zenify opens each app's info screen and taps \"Force stop\" for you — " +
-                    "just like Greenify's root-free mode. You'll briefly see the system screens " +
-                    "while it works.",
-            ) {
-                FilledTonalButton(onClick = { AccessibilityUtil.openSettings(context) }) {
-                    Text(if (state.accessibilityEnabled) "Manage" else "Enable accessibility")
-                }
-            }
 
             // ---- Shizuku (silent, instant) ----
             val shizukuEnabled = state.shizukuState == ShizukuManager.State.READY
             EngineCard(
                 icon = Icons.Filled.Terminal,
-                title = "Shizuku (silent & instant)",
+                title = "Shizuku",
+                tagline = "Silent & instant · recommended",
                 enabled = shizukuEnabled,
-                body = "The fastest, invisible method. Activate Shizuku once via wireless " +
-                    "debugging or a PC, then grant Zenify access. Required for background " +
-                    "auto-hibernation.",
+                body = "Stops apps invisibly and reads the live process table — the same " +
+                    "data as Android's own Running services screen, so every running app " +
+                    "is detected. Required for background auto-hibernation.",
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         "1.  Install the Shizuku app.\n" +
-                            "2.  Start it via Wireless debugging (Android 11+) or from a PC:\n" +
-                            "      adb shell sh /sdcard/Android/data/$SHIZUKU_PKG/start.sh\n" +
-                            "3.  Return here and grant access.",
+                            "2.  Start it via Wireless debugging (Android 11+) or from a PC:",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Surface(
+                        shape = MaterialTheme.shapes.small,
+                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    ) {
+                        Text(
+                            "adb shell sh /sdcard/Android/data/$SHIZUKU_PKG/start.sh",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        )
+                    }
+                    Text(
+                        "3.  Return here and grant access.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -116,6 +124,21 @@ fun EngineSetupScreen(
                     }
                 }
             }
+
+            // ---- Accessibility (no root, like Greenify) ----
+            EngineCard(
+                icon = Icons.Filled.Accessibility,
+                title = "Accessibility",
+                tagline = "No root, no PC",
+                enabled = state.accessibilityEnabled,
+                body = "Zenify opens each app's info screen and taps \"Force stop\" for you — " +
+                    "just like Greenify's root-free mode. You'll briefly see the system screens " +
+                    "while it works. Running apps are detected from Android's usage events.",
+            ) {
+                FilledTonalButton(onClick = { AccessibilityUtil.openSettings(context) }) {
+                    Text(if (state.accessibilityEnabled) "Manage" else "Enable accessibility")
+                }
+            }
         }
     }
 }
@@ -124,39 +147,68 @@ fun EngineSetupScreen(
 private fun EngineCard(
     icon: ImageVector,
     title: String,
+    tagline: String,
     enabled: Boolean,
     body: String,
     action: @Composable () -> Unit,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (enabled) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant,
-        ),
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = if (enabled) scheme.primaryContainer else scheme.surfaceContainerLow,
+        contentColor = if (enabled) scheme.onPrimaryContainer else scheme.onSurface,
     ) {
-        Column(Modifier.padding(16.dp)) {
+        Column(Modifier.padding(20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, contentDescription = null)
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
+                Box(
                     modifier = Modifier
+                        .size(44.dp)
+                        .background(
+                            if (enabled) scheme.primary.copy(alpha = 0.15f) else scheme.surfaceContainerHigh,
+                            CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (enabled) scheme.primary else scheme.onSurfaceVariant,
+                    )
+                }
+                Column(
+                    Modifier
                         .weight(1f)
-                        .padding(start = 12.dp),
-                )
-                Icon(
-                    imageVector = if (enabled) Icons.Filled.CheckCircle
-                    else Icons.Filled.RadioButtonUnchecked,
-                    contentDescription = if (enabled) "Active" else "Inactive",
-                    tint = if (enabled) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.outline,
-                )
+                        .padding(start = 14.dp)
+                ) {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        tagline,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (enabled) scheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        else scheme.onSurfaceVariant,
+                    )
+                }
+                Surface(
+                    shape = MaterialTheme.shapes.extraSmall,
+                    color = if (enabled) scheme.primary else scheme.surfaceContainerHighest,
+                    contentColor = if (enabled) scheme.onPrimary else scheme.onSurfaceVariant,
+                ) {
+                    Text(
+                        if (enabled) "ACTIVE" else "NOT SET UP",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
             Text(
                 body,
                 style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 8.dp, bottom = 12.dp),
+                modifier = Modifier.padding(top = 14.dp, bottom = 14.dp),
             )
             action()
         }

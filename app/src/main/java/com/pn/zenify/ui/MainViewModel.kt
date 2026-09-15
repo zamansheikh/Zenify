@@ -76,18 +76,12 @@ data class UiState(
     val hasEngine: Boolean get() = engineMethod != HibernationEngine.Method.NONE
     val excludedCount: Int get() = apps.count { it.whitelisted }
 
-    /**
-     * Top-bar summary line. Counts only the apps actually shown on the home
-     * screen (excluded apps are hidden), so the header never reports an "active"
-     * app that has no row in the list.
-     */
-    val summary: String
-        get() {
-            val visible = apps.filter { !it.whitelisted }
-            return "${visible.count { it.isActive }} active · " +
-                "${visible.count { it.isCached }} cached · " +
-                "${visible.count { it.runState == RunState.STOPPED }} asleep"
-        }
+    /** Counts for the home overview. Only apps actually shown on the home
+     *  screen (excluded apps are hidden), so the header never reports an
+     *  "awake" app that has no row in the list. */
+    val activeCount: Int get() = apps.count { !it.whitelisted && it.isActive }
+    val cachedCount: Int get() = apps.count { !it.whitelisted && it.isCached }
+    val asleepCount: Int get() = apps.count { !it.whitelisted && it.runState == RunState.STOPPED }
 }
 
 /** One-shot messages for the UI (snackbars). */
